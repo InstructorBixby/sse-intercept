@@ -6,9 +6,10 @@ import sys
 import time
 from urllib.parse import urlsplit
 
+import sseframe
+
 
 def read_head(rfile):
-    """Read up to and including the blank line that ends a message head."""
     buf = b""
     while b"\r\n\r\n" not in buf:
         b = rfile.read(1)
@@ -20,14 +21,13 @@ def read_head(rfile):
 
 def parse_head(head):
     lines = head.decode("latin-1").split("\r\n")
-    start = lines[0]
     headers = []
     for line in lines[1:]:
         if not line:
             continue
         name, _, value = line.partition(":")
         headers.append((name.strip(), value.strip()))
-    return start, headers
+    return lines[0], headers
 
 
 def header(headers, name):
@@ -46,27 +46,23 @@ class Handler(socketserver.StreamRequestHandler):
         start, headers = parse_head(head)
         method, target, _ = start.split(" ", 2)
         url = urlsplit(target)
-        host = url.hostname
-        port = url.port or 80
-        if host is None:
+        if url.hostname is None:
             self.wfile.write(b"HTTP/1.1 400 Bad Request\r\n\r\n")
             return
 
-        path = url.path or "/"
-        if url.query:
-            path += "?" + url.query
-
-        up = socket.create_connection((host, port), timeout=30)
+        path = (url.path or "/") + (f"?{url.query}" if url.query else "")
+        up = socket.create_connection((url.hostname, url.port or 80),
+                                      timeout=30)
         out = [f"{method} {path} HTTP/1.1".encode("latin-1")]
         for k, v in headers:
-            if k.lower() in ("proxy-connection",):
+            if k.lower() == "proxy-connection":
                 continue
             out.append(f"{k}: {v}".encode("latin-1"))
         up.sendall(b"\r\n".join(out) + b"\r\n\r\n")
 
-        body_len = header(headers, "content-length")
-        if body_len:
-            up.sendall(self.rfile.read(int(body_len)))
+        length = header(headers, "content-length")
+        if length:
+            up.sendall(self.rfile.read(int(length)))
 
         self.relay(up, method, path)
         up.close()
@@ -81,27 +77,46 @@ class Handler(socketserver.StreamRequestHandler):
         self.wfile.flush()
 
         ctype = (header(headers, "content-type") or "").lower()
-        streaming = ctype.startswith("text/event-stream")
         print(f"--- {method} {path} -> {start}", file=sys.stderr)
+        if not ctype.startswith("text/event-stream"):
+            self.pump(up)
+            return
 
         buf = b""
-        t0 = time.monotonic()
-        last = t0
+        seq = 0
+        last = time.monotonic()
         while True:
             chunk = up.recv(4096)
             if not chunk:
                 break
             self.wfile.write(chunk)
             self.wfile.flush()
-            if not streaming:
-                continue
             buf += chunk
-            while b"\n\n" in buf:
-                block, buf = buf.split(b"\n\n", 1)
+            while True:
+                block, rest = sseframe.split_block(buf)
+                if block is None:
+                    break
+                buf = rest
+                fields, comments = sseframe.parse_block(block)
                 now = time.monotonic()
-                print(f"  +{now - last:7.3f}s  {block!r}",
-                      file=sys.stderr)
-                last = now
+                if fields:
+                    seq += 1
+                    print(f"  #{seq:<4} +{now - last:7.3f}s  "
+                          f"{sseframe.data_of(fields)!r}",
+                          file=sys.stderr)
+                    last = now
+                else:
+                    for c in comments:
+                        print(f"  :     +{now - last:7.3f}s  "
+                              f"keep-alive {c!r}", file=sys.stderr)
+
+    def pump(self, up):
+        while True:
+            chunk = up.recv(16384)
+            if not chunk:
+                return
+            self.wfile.write(chunk)
+            self.wfile.flush()
 
 
 class Server(socketserver.ThreadingTCPServer):
