@@ -19,9 +19,14 @@ import re
 
 SEPARATORS = (b"\r\n\r\n", b"\n\n", b"\r\r")
 LINE_SPLIT = re.compile(r"\r\n|\n|\r")
-# Longest separator minus one byte: the most that can be a prefix of a
-# separator we have not finished receiving.
 PARTIAL = max(len(s) for s in SEPARATORS) - 1
+
+# Not in the spec. It is a convention that several streaming chat APIs
+# share: a final frame whose data is the literal string "[DONE]",
+# carrying no payload, marking end of message. Worth recognising
+# because its absence is a finding -- a client that keys completion off
+# this sentinel and never receives it is a client that hangs.
+DONE_SENTINEL = "[DONE]"
 
 
 def split_block(buf):
@@ -38,13 +43,6 @@ def split_block(buf):
 
 
 def could_be_partial_separator(buf):
-    """True if the buffer tail might be the start of a separator.
-
-    Only used for diagnostics -- split_block already does the right
-    thing by leaving the tail alone -- but it makes the "waiting on a
-    boundary" state visible in the frame view, which is the difference
-    between a stalled server and a stalled parser.
-    """
     tail = buf[-PARTIAL:]
     return any(s.startswith(tail) for s in SEPARATORS if tail)
 
@@ -73,3 +71,33 @@ def parse_block(block):
 def data_of(fields):
     """Join every data field with a newline, per spec."""
     return "\n".join(v for k, v in fields if k == "data")
+
+
+def first(fields, name):
+    for k, v in fields:
+        if k == name:
+            return v
+    return None
+
+
+def event_of(fields):
+    return first(fields, "event")
+
+
+def id_of(fields):
+    return first(fields, "id")
+
+
+def retry_of(fields):
+    """retry: is milliseconds, and a non-integer must be ignored."""
+    raw = first(fields, "retry")
+    if raw is None:
+        return None
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return None
+
+
+def is_done(fields):
+    return data_of(fields).strip() == DONE_SENTINEL
