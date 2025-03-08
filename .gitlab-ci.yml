@@ -1,0 +1,15 @@
+stages:
+  - check
+
+test:
+  stage: check
+  image: python:$PY-slim
+  parallel:
+    matrix:
+      - PY: ["3.11", "3.12", "3.13"]
+  before_script:
+    - pip install -q uv
+    - uv pip install --system -e ".[dev]"
+  script:
+    - ruff check .
+    - pytest -q
