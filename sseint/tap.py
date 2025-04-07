@@ -24,6 +24,7 @@ class Exchange:
     headers: list[tuple[str, str]]
     decoder: str | None
     frames: list[Frame] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 class ConsoleTap:
@@ -50,9 +51,14 @@ class ConsoleTap:
         ex.frames.append(frame)
         if self.quiet:
             return
-        mark = {"comment": ":", "event": "#"}.get(frame.kind, "?")
+        mark = {"comment": ":", "event": "#"}.get(frame.kind, "~")
+        note = f"  [{frame.note}]" if frame.note else ""
         self._say(f"[{ex.n}] {mark}{frame.seq:<4} +{frame.t:7.3f}s  "
-                  f"{frame.summary()}")
+                  f"{frame.summary()}{note}")
+
+    def note(self, ex, text):
+        ex.notes.append(text)
+        self._say(f"[{ex.n}] ! {text}")
 
     def end(self, ex):
         self._say(f"[{ex.n}] end, {len(ex.frames)} frame(s)")
