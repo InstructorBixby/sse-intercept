@@ -7,10 +7,11 @@ note so the view still shows something.
 """
 from __future__ import annotations
 
+from sseint.decoders.chunked import ChunkedDecoder
 from sseint.decoders.ndjson import NDJSONDecoder
 from sseint.decoders.sse import SSEDecoder
 
-REGISTRY = [SSEDecoder, NDJSONDecoder]
+REGISTRY = [SSEDecoder, NDJSONDecoder, ChunkedDecoder]
 BY_NAME = {cls.name: cls for cls in REGISTRY}
 
 

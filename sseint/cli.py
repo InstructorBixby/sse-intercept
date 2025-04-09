@@ -5,6 +5,7 @@ import argparse
 import sys
 
 from sseint import __version__, tls
+from sseint.decoders import BY_NAME
 from sseint.proxy import Server
 from sseint.scope import Scope
 from sseint.tap import ConsoleTap
@@ -24,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "Nothing is proxied without at least one.")
     ap.add_argument("--ca-dir", default="ca",
                     help="where the local CA lives; created if absent")
+    ap.add_argument("--decoder", choices=sorted(BY_NAME),
+                    help="force a decoder instead of dispatching on "
+                         "content-type")
     ap.add_argument("--quiet", action="store_true",
                     help="exchanges only, no per-frame lines")
     return ap
@@ -38,7 +42,8 @@ def main(argv=None) -> int:
         return 2
     certs = tls.CertStore(args.ca_dir)
     tap = ConsoleTap(quiet=args.quiet)
-    srv = Server((args.host, args.port), scope, certs, tap)
+    srv = Server((args.host, args.port), scope, certs, tap,
+                 force_decoder=args.decoder)
     print(f"sseint listening on {args.host}:{args.port}, scope: "
           f"{scope.describe()}", file=sys.stderr)
     print(f"CA: {args.ca_dir}/ca.crt", file=sys.stderr)
