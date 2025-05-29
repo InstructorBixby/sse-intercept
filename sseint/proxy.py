@@ -1,9 +1,8 @@
-"""Proxy core: CONNECT, TLS interception, and an unbuffered relay.
+"""Proxy core: CONNECT, TLS interception, and the streaming relay.
 
-The relay is the part that matters. Bytes go out to the client the
-moment they arrive, and a copy goes to the decoder. Anything that
-reverses that order -- decode, then forward -- turns the tool into the
-thing it was written to replace.
+Everything about reading and writing sockets is here; everything about
+what happens to a frame is in relay.py, rules.py and apply.py, which
+is what lets the interesting behaviour be tested without a socket.
 """
 from __future__ import annotations
 
@@ -16,6 +15,8 @@ from urllib.parse import urlsplit
 from sseint import tls
 from sseint.decoders import by_name, for_content_type
 from sseint.encoding import Inflater
+from sseint.relay import Relay
+from sseint.rules import Context
 from sseint.scope import Scope
 
 HOP_BY_HOP = {
@@ -52,6 +53,24 @@ def header(headers, name):
         if k.lower() == name.lower():
             return v
     return None
+
+
+def rebuild_head(start: str, headers, intercepting: bool) -> bytes:
+    """Re-emit a response head.
+
+    `Content-Length` has to go when rules are armed. A streaming
+    response should not carry one, but one endpoint here sends it on a
+    `text/event-stream` anyway, and a rewrite that changes the body
+    length then produces a response the client either truncates or
+    waits forever for. Dropping it and relying on connection close is
+    the honest fix, and the session records that the proxy did it.
+    """
+    out = [start]
+    for k, v in headers:
+        if intercepting and k.lower() == "content-length":
+            continue
+        out.append(f"{k}: {v}")
+    return ("\r\n".join(out) + "\r\n\r\n").encode("latin-1")
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -96,19 +115,16 @@ class Handler(socketserver.StreamRequestHandler):
             return
         self.wfile.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         self.wfile.flush()
-
-        ctx = self.server.certs.context_for(host)
         try:
-            tls_sock = ctx.wrap_socket(self.connection, server_side=True)
+            tls_sock = self.server.certs.context_for(host).wrap_socket(
+                self.connection, server_side=True)
         except ssl.SSLError as exc:
             self.tap.handshake_failed(host, str(exc))
             return
 
         up = socket.create_connection((host, port), timeout=30)
         up = tls.client_context().wrap_socket(up, server_hostname=host)
-
-        rfile = tls_sock.makefile("rb")
-        wfile = tls_sock.makefile("wb")
+        rfile, wfile = tls_sock.makefile("rb"), tls_sock.makefile("wb")
         try:
             head = read_head(rfile)
             if head is None:
@@ -116,7 +132,7 @@ class Handler(socketserver.StreamRequestHandler):
             start, headers = parse_head(head)
             method, target, _ = start.split(" ", 2)
             self.forward(up, method, target, headers, rfile)
-            self.relay(up, wfile, host, method, target)
+            self.stream(up, wfile, host, method, target)
         finally:
             up.close()
 
@@ -133,7 +149,7 @@ class Handler(socketserver.StreamRequestHandler):
                                       timeout=30)
         path = (url.path or "/") + (f"?{url.query}" if url.query else "")
         self.forward(up, method, path, headers, self.rfile)
-        self.relay(up, self.wfile, url.hostname, method, path)
+        self.stream(up, self.wfile, url.hostname, method, path)
         up.close()
 
     def forward(self, up, method, path, headers, rfile):
@@ -150,46 +166,34 @@ class Handler(socketserver.StreamRequestHandler):
         if length:
             up.sendall(rfile.read(int(length)))
 
-    def relay(self, up, wfile, host, method, path):
+    def stream(self, up, wfile, host, method, path):
         upf = up.makefile("rb")
         head = read_head(upf)
         if head is None:
             return
         start, headers = parse_head(head)
-        wfile.write(head)
-        wfile.flush()
-
         ctype = header(headers, "content-type")
         decoder = (by_name(self.server.force_decoder)
                    if self.server.force_decoder
                    else for_content_type(ctype))
-        inflater = Inflater(header(headers, "content-encoding"))
         ex = self.tap.exchange(host=host, method=method, path=path,
                                status=start, headers=headers,
                                decoder=decoder.name if decoder else None)
-        reported = False
+        relay = Relay(decoder, Inflater(header(headers,
+                                               "content-encoding")),
+                      self.tap, ex, self.server.engine,
+                      Context(host=host, path=path.split("?")[0]),
+                      pause_budget_s=self.server.pause_budget_s)
+        wfile.write(rebuild_head(start, headers, relay.intercepting))
+        wfile.flush()
         try:
             while True:
                 chunk = up.recv(16384)
                 if not chunk:
                     break
-                wfile.write(chunk)
-                wfile.flush()
-                if decoder is None:
-                    continue
-                body = inflater.feed(chunk)
-                if not reported and inflater.mismatch:
-                    self.tap.note(ex, inflater.mismatch)
-                    reported = True
-                for frame in decoder.feed(body):
-                    self.tap.frame(ex, frame)
-            if decoder is not None:
-                tail = inflater.close()
-                if tail:
-                    for frame in decoder.feed(tail):
-                        self.tap.frame(ex, frame)
-                for frame in decoder.close():
-                    self.tap.frame(ex, frame)
+                if not relay.chunk(chunk, wfile):
+                    break
+            relay.finish(wfile)
         finally:
             self.tap.end(ex)
 
@@ -199,11 +203,14 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, addr, scope: Scope, certs, tap,
-                 force_decoder: str | None = None):
+    def __init__(self, addr, scope: Scope, certs, tap, engine=None,
+                 force_decoder: str | None = None,
+                 pause_budget_s: float = 30.0):
         self.scope = scope
         self.certs = certs
         self.tap = tap
+        self.engine = engine
         self.force_decoder = force_decoder
+        self.pause_budget_s = pause_budget_s
         self.lock = threading.Lock()
         super().__init__(addr, Handler)

@@ -2,7 +2,6 @@
 
 The proxy does not print. It hands events to a tap, and the tap
 decides whether they become terminal output, a session file, or both.
-That seam is the whole reason record/replay is going to be cheap.
 """
 from __future__ import annotations
 
@@ -32,6 +31,7 @@ class ConsoleTap:
     def __init__(self, stream=sys.stderr, quiet=False):
         self.stream = stream
         self.quiet = quiet
+        self.paused = False
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
@@ -47,14 +47,24 @@ class ConsoleTap:
                   f"  decoder={decoder or '-'}")
         return ex
 
-    def frame(self, ex, frame: Frame):
+    def frame(self, ex, frame: Frame, added_ms: int = 0, ops=(),
+              emitted: int = 1):
         ex.frames.append(frame)
         if self.quiet:
             return
         mark = {"comment": ":", "event": "#"}.get(frame.kind, "~")
-        note = f"  [{frame.note}]" if frame.note else ""
+        bits = []
+        if ops:
+            bits.append("+".join(ops))
+        if added_ms:
+            bits.append(f"+{added_ms}ms by proxy")
+        if emitted != 1:
+            bits.append(f"{emitted} frame(s) written")
+        if frame.note and frame.note not in ops:
+            bits.append(frame.note)
+        tail = f"   [{'; '.join(bits)}]" if bits else ""
         self._say(f"[{ex.n}] {mark}{frame.seq:<4} +{frame.t:7.3f}s  "
-                  f"{frame.summary()}{note}")
+                  f"{frame.summary()}{tail}")
 
     def note(self, ex, text):
         ex.notes.append(text)
