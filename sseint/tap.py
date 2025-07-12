@@ -1,7 +1,8 @@
 """Where decoded frames go.
 
-The proxy does not print. It hands events to a tap, and the tap
-decides whether they become terminal output, a session file, or both.
+The proxy does not print and does not write files. It hands events to
+a tap; a tap decides what they become. `TeeTap` is what `--record`
+builds: console and session file from one stream of events.
 """
 from __future__ import annotations
 
@@ -78,3 +79,48 @@ class ConsoleTap:
 
     def handshake_failed(self, host, why):
         self._say(f"handshake with {host} failed: {why}")
+
+
+class TeeTap:
+    """Console plus a session file.
+
+    The console tap owns exchange numbering and the pause flag; the
+    writer only ever observes. Two components that both think they own
+    the pause flag is a bug I would rather not write twice.
+    """
+
+    def __init__(self, console: ConsoleTap, writer):
+        self.console = console
+        self.writer = writer
+
+    @property
+    def paused(self):
+        return self.console.paused
+
+    @paused.setter
+    def paused(self, value):
+        self.console.paused = value
+
+    def exchange(self, **kw):
+        ex = self.console.exchange(**kw)
+        self.writer.exchange(ex)
+        return ex
+
+    def frame(self, ex, frame, added_ms: int = 0, ops=(), emitted=1):
+        self.console.frame(ex, frame, added_ms=added_ms, ops=ops,
+                           emitted=emitted)
+        self.writer.frame(ex, frame, added_ms=added_ms, ops=ops)
+
+    def note(self, ex, text):
+        self.console.note(ex, text)
+        self.writer.note(ex, text)
+
+    def end(self, ex):
+        self.console.end(ex)
+        self.writer.end(ex)
+
+    def refused(self, host):
+        self.console.refused(host)
+
+    def handshake_failed(self, host, why):
+        self.console.handshake_failed(host, why)
