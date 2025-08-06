@@ -1,37 +1,46 @@
 # sse-intercept
 
-An intercepting proxy for streaming HTTP responses: `text/event-stream`
-first, then anything else that arrives in pieces.
+An intercepting proxy for streaming HTTP responses: `text/event-stream`,
+NDJSON, and raw chunked bodies.
 
 ## why I did not just use Burp
 
-Burp buffers a streaming response. It shows up in the history as one
+Burp buffers a streaming response. It appears in the history as one
 body once the stream closes, which loses three things:
 
 - **frame boundaries.** A token stream is a sequence of small frames.
-  Concatenated, they look like a normal response, and every question
-  about framing -- are `data:` fields split per token or per word, does
-  the server send a final sentinel, is the `event:` name consistent --
-  becomes unanswerable.
-- **timing.** The gap between frames is a measurement, not noise. A
-  first-frame latency of two seconds followed by 40ms gaps is a
-  different system from an even 150ms, and both are invisible once the
-  body is a single value.
-- **the intercept point.** By the time a buffering proxy offers you an
-  edit, the client has already consumed the stream. Dropping frame 3,
-  delaying frame 7 past the client's read timeout, or injecting a frame
-  with no `event:` name are not expressible at all.
+  Concatenated they look like an ordinary response, and every question
+  about framing -- is `data:` split per token or per word, is there a
+  final sentinel, is the `event:` name consistent -- becomes
+  unanswerable.
+- **timing.** The gap between frames is a measurement. Two seconds to
+  first frame then 40ms gaps is a different system from an even 150ms,
+  and both look identical once the body is a single value.
+- **the intercept point.** By the time a buffering proxy offers an
+  edit, the client has consumed the stream. Dropping frame 3, delaying
+  frame 7 past the client's read timeout, cutting before the sentinel,
+  or injecting a frame the server never sent are not expressible.
 
-So: only the streaming case, without buffering. Burp keeps everything
-else.
+So: the streaming case only, without buffering.
 
 ## how I run it
 
     pip install -e ".[dev]"
-    sseint --allow-host api.example.test --port 8080
+
+    # observe
+    sseint proxy --allow-host api.example.test --record run.jsonl
+
+    # intervene
+    sseint proxy --rules drop-sentinel.yaml --record run.jsonl
+
+    # read it back
+    sseint show run.jsonl --reassemble json:choices.0.delta.content
+
+    # make a client bug reproducible without the server
+    sseint replay run.jsonl --exchange 3 --speed 4
 
 Nothing is proxied until a host is named: an empty scope refuses every
-request, including CONNECT. The CA is generated on first run into
+request, CONNECT included. The CA is generated on first run into
 `ca/`; import `ca/ca.crt` into the client under test and nowhere else.
 
 ## what it decodes
@@ -39,16 +48,27 @@ request, including CONNECT. The CA is generated on first run into
 | content type | decoder |
 |---|---|
 | `text/event-stream` | SSE framing: `data:` `event:` `id:` `retry:`, comments, `[DONE]` |
+| `application/x-ndjson`, `application/jsonl` | one JSON value per line |
+| anything, with `--decoder chunked` | one frame per HTTP chunk |
 
-More to come -- NDJSON and raw chunked are the next two.
+## docs
+
+| file | what |
+|---|---|
+| `docs/decoders.md` | the decoder contract and what each one assumes |
+| `docs/rules.md` | matching, actions, and the recipes worth having |
+| `docs/session-format.md` | the record format |
+| `NOTES.md` | why it is shaped like this |
 
 ## layout
 
 | path | what |
 |---|---|
-| `sseint/proxy.py` | CONNECT, TLS, the unbuffered relay |
+| `sseint/proxy.py` | CONNECT, TLS, sockets |
+| `sseint/relay.py` | the streaming relay, fast path and intercepting path |
+| `sseint/rules.py` | matching, and the op types |
+| `sseint/apply.py` | ops to a plan the relay can execute |
 | `sseint/decoders/` | content-type-aware stream decoders |
-| `sseint/frame.py` | the unit everything deals in |
+| `sseint/session.py` | record and read a session |
+| `sseint/replay.py` | serve a recorded stream back |
 | `sseint/scope.py` | host allowlist, default deny |
-| `sseint/tap.py` | where decoded frames go |
-| `NOTES.md` | why it is shaped like this |
