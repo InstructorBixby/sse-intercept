@@ -2,6 +2,21 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.3.0]
+
+### Added
+- Session recording: append-only JSON lines, flushed per record, so
+  a killed run still leaves a readable file.
+- `sseint replay` serves a recorded exchange back to a client at the
+  original gaps, at a multiple of them, or with no gaps at all.
+  Pacing is against one start time, so a slow write does not
+  accumulate drift.
+- `sseint show` prints a session, with `--reassemble`.
+
+### Changed
+- Subcommands: `proxy`, `replay`, `show`. The flat flag namespace
+  had started to need sentences explaining which flags applied when.
+
 ## [0.2.0]
 
 ### Added
