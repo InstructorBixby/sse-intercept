@@ -1,15 +1,11 @@
-"""Command line.
-
-Subcommands, because the tool now does three things and a single flat
-flag namespace was starting to need sentences in the help text to
-explain which flags applied when.
-"""
+"""Command line."""
 from __future__ import annotations
 
 import argparse
 import sys
 
 from sseint import __version__, session, tls
+from sseint.compare import compare
 from sseint.decoders import BY_NAME
 from sseint.proxy import Server
 from sseint.reassemble import describe, reassemble
@@ -35,8 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host this proxy may connect to; repeatable. "
                         "Nothing is proxied without at least one.")
     p.add_argument("--rules", metavar="FILE")
-    p.add_argument("--record", metavar="FILE",
-                   help="append a session file")
+    p.add_argument("--record", metavar="FILE")
     p.add_argument("--ca-dir", default="ca")
     p.add_argument("--decoder", choices=sorted(BY_NAME))
     p.add_argument("--pause-budget", type=float, default=30.0,
@@ -56,6 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--exchange", type=int)
     s.add_argument("--reassemble", metavar="MODE",
                    help="data | lines | json:<dotted.path>")
+
+    c = sub.add_parser(
+        "compare",
+        help="diff a reassembled stream against a non-streamed "
+             "response to the same request")
+    c.add_argument("session")
+    c.add_argument("--streamed", type=int, required=True,
+                   metavar="N", help="exchange number of the stream")
+    c.add_argument("--whole", type=int, required=True, metavar="N",
+                   help="exchange number of the non-streamed response")
+    c.add_argument("--reassemble", default="data", metavar="MODE")
     return ap
 
 
@@ -90,7 +96,6 @@ def cmd_proxy(args) -> int:
               file=sys.stderr)
     if writer:
         print(f"recording to {writer.path}", file=sys.stderr)
-    print(f"CA: {args.ca_dir}/ca.crt", file=sys.stderr)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -152,10 +157,25 @@ def cmd_show(args) -> int:
     return 0
 
 
+def cmd_compare(args) -> int:
+    _, exchanges = session.read(args.session)
+    by_n = {e.n: e for e in exchanges}
+    for n in (args.streamed, args.whole):
+        if n not in by_n:
+            print(f"sseint: no exchange {n} in {args.session}",
+                  file=sys.stderr)
+            return 2
+    streamed = reassemble(by_n[args.streamed].frames, args.reassemble)
+    whole = reassemble(by_n[args.whole].frames, args.reassemble)
+    result = compare(streamed, whole)
+    print(result.report())
+    return 0 if result.same else 1
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     return {"proxy": cmd_proxy, "replay": cmd_replay,
-            "show": cmd_show}[args.cmd](args)
+            "show": cmd_show, "compare": cmd_compare}[args.cmd](args)
 
 
 if __name__ == "__main__":
