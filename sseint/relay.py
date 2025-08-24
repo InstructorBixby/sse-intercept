@@ -1,20 +1,23 @@
 """The streaming relay, with rules in the path.
 
-Rules force an uncomfortable trade. Without them the relay forwards
-each chunk before decoding it, so the proxy adds no measurable
-latency. With them it cannot: deciding whether to drop frame 12
-requires having parsed frame 12, which means the bytes wait.
+`feed(chunk) -> bytes`. The relay decides what should go to the client
+and returns it; it never touches a socket. That is what lets the same
+code sit behind a mitmproxy stream hook and behind a test that feeds it
+a bytestring.
+
+Rules force an uncomfortable trade. Without them the relay can hand
+back each chunk untouched and decode a copy, so nothing is added to
+the path. With them it cannot: deciding whether to drop frame 12
+requires having parsed frame 12.
 
 Resolution: two paths.
 
-- **No engine, or an engine whose rules cannot match this exchange**
-  (host and path are known before the first byte, so most rule sets
-  are excluded here): forward the chunk, then decode a copy. Zero
-  added latency, and this is the path a plain observation run takes.
-- **Engine armed**: hold the chunk, decode, plan, write what the plan
-  says. The relay then records `added_ms` per frame, so the timing in
-  the session says how much of the gap was the proxy. An instrument
-  that does not report its own overhead is not an instrument.
+- **No engine**: return the chunk as it arrived, decode a copy. This
+  is the path an observation run takes and it adds nothing.
+- **Engine armed**: decode, plan, return what the plan says. Every
+  frame then records `added_ms`, so the timing in the session says how
+  much of each gap was the proxy. An instrument that does not report
+  its own overhead is not an instrument.
 """
 from __future__ import annotations
 
@@ -27,7 +30,8 @@ from sseint.rules import Context
 class Relay:
 
     def __init__(self, decoder, inflater, tap, exchange, engine=None,
-                 ctx: Context | None = None, pause_budget_s: float = 30.0,
+                 ctx: Context | None = None,
+                 pause_budget_s: float = 30.0,
                  sleep=time.sleep, clock=time.monotonic):
         self.decoder = decoder
         self.inflater = inflater
@@ -39,56 +43,66 @@ class Relay:
         self._sleep = sleep
         self._clock = clock
         self._cut = False
-        self._reported_encoding = False
 
     @property
     def intercepting(self) -> bool:
         return bool(self.engine) and self.decoder is not None
 
-    def chunk(self, chunk: bytes, wfile) -> bool:
-        """Handle one chunk. Returns False once the stream is over."""
+    # -- the hook ---------------------------------------------------
+    def feed(self, chunk: bytes) -> bytes:
         if self._cut:
-            return False
+            return b""
         if not self.intercepting:
-            wfile.write(chunk)
-            wfile.flush()
             self._observe(chunk)
-            return True
-        return self._intercept(chunk, wfile)
+            return chunk
+        out = b""
+        for frame in self._decode(chunk):
+            blob, keep = self._handle(frame)
+            out += blob
+            if not keep:
+                self._cut = True
+                break
+        return out
 
-    def finish(self, wfile):
+    def finish(self) -> bytes:
         if self.decoder is None or self._cut:
-            return
-        tail = self.inflater.close()
+            return b""
         frames = []
+        tail = self.inflater.close()
         if tail:
             frames += self.decoder.feed(tail)
         frames += self.decoder.close()
-        for frame in frames:
-            if self.intercepting:
-                self._emit(frame, wfile)
-            else:
+        if not self.intercepting:
+            for frame in frames:
                 self.tap.frame(self.ex, frame)
+            return b""
+        out = b""
+        for frame in frames:
+            blob, keep = self._handle(frame)
+            out += blob
+            if not keep:
+                break
+        return out
 
-    # -- observation only -------------------------------------------
+    # -- internals --------------------------------------------------
+    def _decode(self, chunk: bytes):
+        body = self.inflater.feed(chunk)
+        self._encoding_note()
+        return self.decoder.feed(body)
+
     def _observe(self, chunk: bytes):
         if self.decoder is None:
             return
-        body = self.inflater.feed(chunk)
-        self._encoding_note()
-        for frame in self.decoder.feed(body):
+        for frame in self._decode(chunk):
             self.tap.frame(self.ex, frame)
 
-    # -- intercepting -----------------------------------------------
-    def _intercept(self, chunk: bytes, wfile) -> bool:
-        body = self.inflater.feed(chunk)
-        self._encoding_note()
-        for frame in self.decoder.feed(body):
-            if not self._emit(frame, wfile):
-                return False
-        return True
+    def _encoding_note(self):
+        mismatch = self.inflater.mismatch
+        if mismatch and not getattr(self, "_said_encoding", False):
+            self._said_encoding = True
+            self.tap.note(self.ex, mismatch)
 
-    def _emit(self, frame, wfile) -> bool:
+    def _handle(self, frame) -> tuple[bytes, bool]:
         ops, fired = self.engine.decide(frame, self.ctx)
         p = plan(frame, ops)
         t0 = self._clock()
@@ -97,26 +111,19 @@ class Relay:
         if p.pause:
             self._hold()
         for note in p.notes:
-            self.tap.note(self.ex, f"{frame.seq}: {note}")
-        for blob in p.emit:
-            wfile.write(blob)
-        wfile.flush()
+            self.tap.note(self.ex, f"frame {frame.seq}: {note}")
         frame.note = frame.note or (",".join(fired) or None)
         self.tap.frame(self.ex, frame,
                        added_ms=int((self._clock() - t0) * 1000),
                        ops=fired, emitted=len(p.emit))
-        if p.cut:
-            self._cut = True
-            return False
-        return True
+        return b"".join(p.emit), not p.cut
 
     def _hold(self):
         """Hold the stream, but not forever.
 
-        A pause with no release looks like a hung server to the client,
-        and the client's read timeout fires -- which is a different
-        test from the one that was intended, and worse, it looks like
-        the pause worked. So a pause is bounded and says when it ended
+        A pause with no release looks like a hung server, the client's
+        read timeout fires, and the result looks like the pause
+        worked. So a pause is bounded and says when it released
         itself.
         """
         self.tap.note(self.ex, "paused")
@@ -127,6 +134,6 @@ class Relay:
             self.tap.note(
                 self.ex,
                 f"pause budget of {self.pause_budget_s:g}s expired, "
-                f"releasing. Whatever the client did after this is "
-                f"the proxy's fault, not the server's.")
+                f"releasing. Whatever the client does after this is "
+                f"the proxy's doing, not the server's.")
             self.tap.paused = False
