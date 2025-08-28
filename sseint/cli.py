@@ -1,19 +1,20 @@
-"""Command line."""
+"""Command line.
+
+`proxy` builds a mitmproxy invocation and runs it in-process. The rest
+of the subcommands operate on session files and need no proxy at all.
+"""
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 
-from sseint import __version__, session, tls
+from sseint import __version__, session
 from sseint.compare import compare
 from sseint.decoders import BY_NAME
-from sseint.proxy import Server
 from sseint.reassemble import describe, reassemble
 from sseint.replay import ReplayServer
 from sseint.rulefile import RuleFileError, load
-from sseint.scope import Scope
-from sseint.session import SessionWriter
-from sseint.tap import ConsoleTap, TeeTap
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,11 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "Nothing is proxied without at least one.")
     p.add_argument("--rules", metavar="FILE")
     p.add_argument("--record", metavar="FILE")
-    p.add_argument("--ca-dir", default="ca")
     p.add_argument("--decoder", choices=sorted(BY_NAME))
-    p.add_argument("--pause-budget", type=float, default=30.0,
+    p.add_argument("--pause-budget", type=int, default=30,
                    metavar="SECONDS")
+    p.add_argument("--confdir", default="~/.mitmproxy",
+                   help="mitmproxy config dir; its ca-cert.pem is the "
+                        "CA to import into the client under test")
     p.add_argument("--quiet", action="store_true")
+    p.add_argument("--set", action="append", default=[],
+                   metavar="OPT=VALUE",
+                   help="passed through to mitmproxy")
 
     r = sub.add_parser("replay", help="serve a recorded stream")
     r.add_argument("session")
@@ -57,53 +63,57 @@ def build_parser() -> argparse.ArgumentParser:
         help="diff a reassembled stream against a non-streamed "
              "response to the same request")
     c.add_argument("session")
-    c.add_argument("--streamed", type=int, required=True,
-                   metavar="N", help="exchange number of the stream")
-    c.add_argument("--whole", type=int, required=True, metavar="N",
-                   help="exchange number of the non-streamed response")
+    c.add_argument("--streamed", type=int, required=True, metavar="N")
+    c.add_argument("--whole", type=int, required=True, metavar="N")
     c.add_argument("--reassemble", default="data", metavar="MODE")
     return ap
 
 
 def cmd_proxy(args) -> int:
-    engine = None
     hosts = list(args.allow_host)
     if args.rules:
         try:
-            extra, engine = load(args.rules)
+            extra, _ = load(args.rules)
         except RuleFileError as exc:
             print(f"sseint: {args.rules}: {exc}", file=sys.stderr)
             return 2
         hosts += extra
-    scope = Scope(hosts)
-    if not scope:
+    if not [h for h in hosts if h.strip()]:
         print("sseint: refusing to start with an empty scope. Pass "
               "--allow-host or put allow_hosts in the rule file.",
               file=sys.stderr)
         return 2
-    console = ConsoleTap(quiet=args.quiet)
-    writer = SessionWriter(args.record) if args.record else None
-    tap = TeeTap(console, writer) if writer else console
-    srv = Server((args.host, args.port), scope,
-                 tls.CertStore(args.ca_dir), tap, engine=engine,
-                 force_decoder=args.decoder,
-                 pause_budget_s=args.pause_budget)
+
+    # Imported here so that `sseint show` on a laptop without
+    # mitmproxy installed still works.
+    from mitmproxy.options import Options
+    from mitmproxy.tools.dump import DumpMaster
+
+    from sseint.addon import StreamTap
+
+    opts = Options(listen_host=args.host, listen_port=args.port,
+                   confdir=args.confdir)
+    master = DumpMaster(opts, with_termlog=False, with_dumper=False)
+    master.addons.add(StreamTap())
+    settings = {
+        "sseint_allow_hosts": ",".join(hosts),
+        "sseint_rules": args.rules or "",
+        "sseint_record": args.record or "",
+        "sseint_decoder": args.decoder or "",
+        "sseint_pause_budget": args.pause_budget,
+        "sseint_quiet": args.quiet,
+    }
+    for raw in args.set:
+        key, _, value = raw.partition("=")
+        settings[key] = value
+    master.options.update(**settings)
     print(f"sseint listening on {args.host}:{args.port}, scope: "
-          f"{scope.describe()}", file=sys.stderr)
-    if engine:
-        print(f"{len(engine.rules)} rule(s): "
-              f"{', '.join(r.id for r in engine.rules)}",
-              file=sys.stderr)
-    if writer:
-        print(f"recording to {writer.path}", file=sys.stderr)
+          f"{', '.join(hosts)}", file=sys.stderr)
+    print(f"CA: {args.confdir}/mitmproxy-ca-cert.pem", file=sys.stderr)
     try:
-        srv.serve_forever()
+        asyncio.run(master.run())
     except KeyboardInterrupt:
         print("", file=sys.stderr)
-    finally:
-        srv.server_close()
-        if writer:
-            writer.close()
     return 0
 
 
