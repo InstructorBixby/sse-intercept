@@ -2,6 +2,32 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.4.0]
+
+### Added
+- `sseint compare`: diff a reassembled stream against the
+  non-streamed response to the same request. The usual cause of a
+  difference is a control that runs on a complete response and
+  cannot run on a stream.
+
+### Changed
+- **The interception core is now a mitmproxy addon.** The
+  hand-rolled CONNECT and TLS path is gone. HTTP/2 works, the
+  handshake is somebody else's problem, and the CA is mitmproxy's
+  at `~/.mitmproxy/mitmproxy-ca-cert.pem`. The decoders, rule
+  engine, plan builder, session format and replay server are
+  unchanged -- they never touched a socket.
+- `Relay.feed(chunk) -> bytes` instead of writing to a file object,
+  which is what let the same relay sit behind a stream hook.
+
+### Removed
+- `--ca-dir` and the generated local CA. Use `--confdir`.
+
+### Known
+- A `delay` or `pause` blocks mitmproxy's event loop for the
+  duration, so other flows on the same proxy stall. Aim a timing
+  run at one host. See `docs/running.md`.
+
 ## [0.3.0]
 
 ### Added
