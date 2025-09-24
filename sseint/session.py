@@ -1,9 +1,9 @@
 """Session files.
 
 Append-only JSON lines. The format is chosen so that a session is
-still readable after the process that was writing it was killed, which
-is how most of them end -- `tail -f` on a run in progress is useful,
-and a partial file is a valid session minus its last line.
+still readable after the process writing it was killed, which is how
+most of them end -- `tail -f` on a run in progress is useful, and a
+partial file is a valid session minus its last line.
 
 Record types:
 
@@ -12,11 +12,6 @@ Record types:
     frame     one per decoded frame
     note      anything the proxy wants to say about an exchange
     end       one per exchange, with the frame count
-
-Frame payloads are stored as fields, not as raw bytes, when the frame
-decoded cleanly, because that is what diffs and greps usefully. A
-frame whose bytes are not valid UTF-8 keeps `raw_b64` as well, so a
-replay is byte-exact and a report can show what actually arrived.
 """
 from __future__ import annotations
 
@@ -106,6 +101,8 @@ class Exchange:
         self.decoder = rec.get("decoder")
         self.frames: list[Frame] = []
         self.notes: list[str] = []
+        self.added_ms: dict[int, int] = {}
+        self.ops: dict[int, list[str]] = {}
 
 
 def read(path) -> tuple[dict, list[Exchange]]:
@@ -141,6 +138,10 @@ def read(path) -> tuple[dict, list[Exchange]]:
                 comments=list(rec.get("comments", [])),
                 note=rec.get("note"))
             ex.frames.append(frame)
+            if rec.get("added_ms"):
+                ex.added_ms[frame.seq] = rec["added_ms"]
+            if rec.get("ops"):
+                ex.ops[frame.seq] = list(rec["ops"])
         elif kind == "note":
             ex = by_n.get(rec.get("ex"))
             if ex is not None:
