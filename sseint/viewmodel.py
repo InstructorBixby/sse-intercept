@@ -51,7 +51,6 @@ class ViewModel:
         self.filter = Filter()
         self.follow = True
 
-    # -- current exchange -------------------------------------------
     @property
     def exchange(self):
         return self.exchanges[self.index] if self.exchanges else None
@@ -66,7 +65,6 @@ class ViewModel:
             self.index = (self.index - 1) % len(self.exchanges)
             self.selected = self.top = 0
 
-    # -- rows --------------------------------------------------------
     @property
     def rows(self):
         ex = self.exchange
@@ -104,7 +102,6 @@ class ViewModel:
             return None
         return rows[min(self.selected, len(rows) - 1)]
 
-    # -- panes -------------------------------------------------------
     def line(self, frame, ops, width: int = 70) -> str:
         mark = MARKS.get(frame.kind, "?")
         tag = f" [{','.join(ops)}]" if ops else ""
@@ -119,7 +116,6 @@ class ViewModel:
         out = [f"frame {frame.seq}  kind={frame.kind}  "
                f"t=+{frame.t:.3f}s"]
         if ops:
-            out.append f"rules: {', '.join(ops)}" if False else None
             out.append(f"rules: {', '.join(ops)}")
         if frame.note:
             out.append(f"note: {frame.note}")
