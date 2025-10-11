@@ -1,7 +1,9 @@
 """Command line.
 
 `proxy` builds a mitmproxy invocation and runs it in-process. The rest
-of the subcommands operate on session files and need no proxy at all.
+of the subcommands operate on session files and need no proxy at all,
+which is deliberate: reading a run should not require being able to
+make one.
 """
 from __future__ import annotations
 
@@ -12,9 +14,10 @@ import sys
 from sseint import __version__, session
 from sseint.compare import compare
 from sseint.decoders import BY_NAME
-from sseint.reassemble import describe, reassemble
+from sseint.reassemble import reassemble
 from sseint.replay import ReplayServer
 from sseint.rulefile import RuleFileError, load
+from sseint.show import render
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,9 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--decoder", choices=sorted(BY_NAME))
     p.add_argument("--pause-budget", type=int, default=30,
                    metavar="SECONDS")
-    p.add_argument("--confdir", default="~/.mitmproxy",
-                   help="mitmproxy config dir; its ca-cert.pem is the "
-                        "CA to import into the client under test")
+    p.add_argument("--confdir", default="~/.mitmproxy")
     p.add_argument("--quiet", action="store_true")
     p.add_argument("--set", action="append", default=[],
                    metavar="OPT=VALUE",
@@ -57,6 +58,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--exchange", type=int)
     s.add_argument("--reassemble", metavar="MODE",
                    help="data | lines | json:<dotted.path>")
+    s.add_argument("--timing", action="store_true")
+    s.add_argument("--histogram", action="store_true")
+    s.add_argument("--stall", type=float, default=1.0, metavar="SECONDS",
+                   help="gap at or above which a frame counts as a stall")
+
+    v = sub.add_parser("view", help="browse a session in the terminal")
+    v.add_argument("session")
 
     c = sub.add_parser(
         "compare",
@@ -84,8 +92,8 @@ def cmd_proxy(args) -> int:
               file=sys.stderr)
         return 2
 
-    # Imported here so that `sseint show` on a laptop without
-    # mitmproxy installed still works.
+    # Imported here so `sseint show` works on a machine without
+    # mitmproxy installed.
     from mitmproxy.options import Options
     from mitmproxy.tools.dump import DumpMaster
 
@@ -141,29 +149,21 @@ def cmd_replay(args) -> int:
 
 def cmd_show(args) -> int:
     meta, exchanges = session.read(args.session)
-    print(f"# {args.session}  format={meta.get('format')} "
-          f"tool={meta.get('tool_version')}")
-    for ex in exchanges:
-        if args.exchange and ex.n != args.exchange:
-            continue
-        print(f"\n[{ex.n}] {ex.method} {ex.host}{ex.path} -> "
-              f"{ex.status}  decoder={ex.decoder or '-'}")
-        shape = describe(ex.frames)
-        print(f"      {shape['frames']} frame(s), "
-              f"{shape['keepalives']} keep-alive(s), "
-              f"first +{shape['first_frame_s']}s, "
-              f"max gap {shape['max_gap_s']}s, "
-              f"sentinel={shape['done_sentinel']}")
-        for note in ex.notes:
-            print(f"      ! {note}")
-        if args.reassemble:
-            print(reassemble(ex.frames, args.reassemble))
-            continue
-        for f in ex.frames:
-            mark = {"comment": ":", "event": "#"}.get(f.kind, "~")
-            note = f"   [{f.note}]" if f.note else ""
-            print(f"  {mark}{f.seq:<4} +{f.t:7.3f}s  "
-                  f"{f.summary(100)}{note}")
+    sys.stdout.write(render(
+        meta, exchanges, only=args.exchange,
+        reassemble_mode=args.reassemble, timing=args.timing,
+        hist=args.histogram, stall_s=args.stall))
+    return 0
+
+
+def cmd_view(args) -> int:
+    from sseint.view import run
+    _, exchanges = session.read(args.session)
+    if not exchanges:
+        print(f"sseint: {args.session} has no exchanges",
+              file=sys.stderr)
+        return 2
+    run(exchanges)
     return 0
 
 
@@ -185,7 +185,8 @@ def cmd_compare(args) -> int:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     return {"proxy": cmd_proxy, "replay": cmd_replay,
-            "show": cmd_show, "compare": cmd_compare}[args.cmd](args)
+            "show": cmd_show, "view": cmd_view,
+            "compare": cmd_compare}[args.cmd](args)
 
 
 if __name__ == "__main__":
