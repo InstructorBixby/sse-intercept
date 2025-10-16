@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sse-intercept"
-version = "0.4.0"
+version = "0.5.0"
 description = "Intercepting proxy for streaming HTTP responses: SSE, chunked, NDJSON"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [{name = "c01n31pan1c", email = "panic@c01n31.net"}]
 dependencies = ["mitmproxy>=11", "PyYAML>=6"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
 [project.scripts]
 sseint = "sseint.cli:main"
 
@@ -29,3 +29,12 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.package-data]
+sseint = ["py.typed"]
+
+[tool.mypy]
+files = ["sseint"]
+no_implicit_optional = true
+disallow_untyped_defs = false

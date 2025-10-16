@@ -12,4 +12,5 @@ test:
     - uv pip install --system -e ".[dev]"
   script:
     - ruff check .
+    - mypy
     - pytest -q
