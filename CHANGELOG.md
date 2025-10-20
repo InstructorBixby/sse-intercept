@@ -2,6 +2,23 @@
 
 Keep a Changelog format, semver versions.
 
+## [0.5.0]
+
+### Added
+- Timing statistics: time to first frame reported separately, gap
+  p50/p95/max, individually listed stalls, keep-alive interval, and
+  the latency the proxy itself added.
+- `sseint show --timing` and `--histogram`.
+- `sseint view`: a curses frame browser with filtering, a detail
+  pane, a timing pane and the reassembled message. The decisions
+  about what is on screen live in `viewmodel.py` and are tested;
+  the curses layer only draws.
+- `sseint.api`: the surface my other code is allowed to import,
+  fully annotated, plus `py.typed`. My two scripts on top of this
+  both reached into modules that move every release, and both
+  broke on a refactor I thought was internal.
+- `mypy` in CI.
+
 ## [0.4.0]
 
 ### Added
