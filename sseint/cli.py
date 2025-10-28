@@ -1,9 +1,7 @@
-"""Command line.
+"""Command line: argparse and dispatch, nothing else.
 
-`proxy` builds a mitmproxy invocation and runs it in-process. The rest
-of the subcommands operate on session files and need no proxy at all,
-which is deliberate: reading a run should not require being able to
-make one.
+Every subcommand body lives in a module that can be called without
+argparse, because that is what the tests do.
 """
 from __future__ import annotations
 
@@ -60,8 +58,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="data | lines | json:<dotted.path>")
     s.add_argument("--timing", action="store_true")
     s.add_argument("--histogram", action="store_true")
-    s.add_argument("--stall", type=float, default=1.0, metavar="SECONDS",
-                   help="gap at or above which a frame counts as a stall")
+    s.add_argument("--stall", type=float, default=1.0,
+                   metavar="SECONDS")
 
     v = sub.add_parser("view", help="browse a session in the terminal")
     v.add_argument("session")
@@ -74,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--streamed", type=int, required=True, metavar="N")
     c.add_argument("--whole", type=int, required=True, metavar="N")
     c.add_argument("--reassemble", default="data", metavar="MODE")
+
+    e = sub.add_parser("export", help="write a session out as HAR")
+    e.add_argument("session")
+    e.add_argument("--exchange", type=int)
+    e.add_argument("--out", help="output path, or - for stdout")
+    e.add_argument("--reassemble", default="data", metavar="MODE")
     return ap
 
 
@@ -92,8 +96,6 @@ def cmd_proxy(args) -> int:
               file=sys.stderr)
         return 2
 
-    # Imported here so `sseint show` works on a machine without
-    # mitmproxy installed.
     from mitmproxy.options import Options
     from mitmproxy.tools.dump import DumpMaster
 
@@ -182,11 +184,16 @@ def cmd_compare(args) -> int:
     return 0 if result.same else 1
 
 
+def cmd_export(args) -> int:
+    from sseint.export_cli import run
+    return run(args)
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     return {"proxy": cmd_proxy, "replay": cmd_replay,
             "show": cmd_show, "view": cmd_view,
-            "compare": cmd_compare}[args.cmd](args)
+            "compare": cmd_compare, "export": cmd_export}[args.cmd](args)
 
 
 if __name__ == "__main__":
