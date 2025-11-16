@@ -21,35 +21,47 @@ import pathlib
 import threading
 import time
 
-from sseint import __version__
+from sseint import __version__, redact
 from sseint.frame import Frame
 
-FORMAT = 1
+FORMAT = 2
 
 
 class SessionWriter:
 
-    def __init__(self, path, clock=time.monotonic, now=time.time):
+    def __init__(self, path, clock=time.monotonic, now=time.time,
+                 redact_headers: bool = True):
         self.path = pathlib.Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("a", encoding="utf-8")
         self._lock = threading.Lock()
         self._clock = clock
-        self._write({"t": "meta", "format": FORMAT,
-                     "tool": "sse-intercept", "tool_version": __version__,
-                     "clock": "monotonic", "started_at": now()})
+        self.redact_headers = redact_headers
+        meta = {"t": "meta", "format": FORMAT, "tool": "sse-intercept",
+                "tool_version": __version__, "clock": "monotonic",
+                "started_at": now(), "redacted": redact_headers}
+        if not redact_headers:
+            meta["warning"] = ("headers are NOT redacted in this file; "
+                               "it may contain credentials")
+        self._write(meta)
 
     def _write(self, obj):
         with self._lock:
             self._fh.write(json.dumps(obj, ensure_ascii=False) + "\n")
             self._fh.flush()
 
+    def _headers(self, pairs):
+        pairs = list(pairs)
+        if self.redact_headers:
+            pairs = redact.headers(pairs)
+        return [list(h) for h in pairs]
+
     def exchange(self, ex, request_headers=()):
         self._write({
             "t": "exchange", "ex": ex.n, "host": ex.host,
             "method": ex.method, "path": ex.path, "status": ex.status,
-            "request_headers": [list(h) for h in request_headers],
-            "response_headers": [list(h) for h in ex.headers],
+            "request_headers": self._headers(request_headers),
+            "response_headers": self._headers(ex.headers),
             "decoder": ex.decoder,
         })
 
