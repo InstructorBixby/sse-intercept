@@ -25,6 +25,8 @@ class Exchange:
     decoder: str | None
     frames: list[Frame] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    added_ms: dict[int, int] = field(default_factory=dict)
+    ops: dict[int, list[str]] = field(default_factory=dict)
 
 
 class ConsoleTap:
@@ -44,13 +46,17 @@ class ConsoleTap:
         ex = Exchange(n=next(self._ids), host=host, method=method,
                       path=path, status=status, headers=headers,
                       decoder=decoder)
-        self._say(f"[{ex.n}] {method} https://{host}{path} -> {status}"
+        self._say(f"[{ex.n}] {method} {host}{path} -> {status}"
                   f"  decoder={decoder or '-'}")
         return ex
 
     def frame(self, ex, frame: Frame, added_ms: int = 0, ops=(),
               emitted: int = 1):
         ex.frames.append(frame)
+        if added_ms:
+            ex.added_ms[frame.seq] = added_ms
+        if ops:
+            ex.ops[frame.seq] = list(ops)
         if self.quiet:
             return
         mark = {"comment": ":", "event": "#"}.get(frame.kind, "~")
@@ -85,8 +91,11 @@ class TeeTap:
     """Console plus a session file.
 
     The console tap owns exchange numbering and the pause flag; the
-    writer only ever observes. Two components that both think they own
-    the pause flag is a bug I would rather not write twice.
+    writer only observes. Two components that both think they own the
+    pause flag is a bug I would rather not write twice.
+
+    `exchange` is not forwarded here: the addon writes the exchange
+    record itself, because only it has the request headers.
     """
 
     def __init__(self, console: ConsoleTap, writer):
@@ -102,9 +111,7 @@ class TeeTap:
         self.console.paused = value
 
     def exchange(self, **kw):
-        ex = self.console.exchange(**kw)
-        self.writer.exchange(ex)
-        return ex
+        return self.console.exchange(**kw)
 
     def frame(self, ex, frame, added_ms: int = 0, ops=(), emitted=1):
         self.console.frame(ex, frame, added_ms=added_ms, ops=ops,

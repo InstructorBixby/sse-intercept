@@ -11,18 +11,8 @@ give you.
 Everything else here is wiring: options, the scope guard, choosing a
 decoder, and handing frames to the same relay the socket
 implementation used.
-
-Run it as:
-
-    sseint proxy --allow-host api.example.test --rules r.yaml
-
-which is a thin wrapper around
-
-    mitmdump -s <this file> --set sseint_allow_hosts=... --set ...
 """
 from __future__ import annotations
-
-import time
 
 from mitmproxy import ctx, http
 
@@ -50,6 +40,7 @@ class StreamTap:
         self.writer = None
         self.force_decoder = None
         self.pause_budget_s = 30.0
+        self.redact = True
 
     # -- options ----------------------------------------------------
     def load(self, loader):
@@ -60,6 +51,10 @@ class StreamTap:
                           "Path to a YAML rule file.")
         loader.add_option("sseint_record", str, "",
                           "Path to a session file to append to.")
+        loader.add_option("sseint_redact", bool, True,
+                          "Redact credential headers in the session "
+                          "file. A file written without this says so "
+                          "in its meta record.")
         loader.add_option("sseint_decoder", str, "",
                           "Force a decoder by name.")
         loader.add_option("sseint_pause_budget", int, 30,
@@ -78,8 +73,11 @@ class StreamTap:
             except RuleFileError as exc:
                 raise ValueError(f"rule file: {exc}") from exc
             self.scope = Scope(list(self.scope.patterns) + hosts)
+        if "sseint_redact" in updated:
+            self.redact = ctx.options.sseint_redact
         if "sseint_record" in updated and ctx.options.sseint_record:
-            self.writer = SessionWriter(ctx.options.sseint_record)
+            self.writer = SessionWriter(ctx.options.sseint_record,
+                                        redact_headers=self.redact)
         if "sseint_quiet" in updated:
             self.console.quiet = ctx.options.sseint_quiet
         if "sseint_decoder" in updated:
@@ -120,10 +118,12 @@ class StreamTap:
             status=f"{flow.response.status_code} {flow.response.reason}",
             headers=list(flow.response.headers.items(multi=True)),
             decoder=decoder.name if decoder else None)
+        if self.writer:
+            self.writer.exchange(
+                ex, request_headers=list(
+                    flow.request.headers.items(multi=True)))
 
         if self.engine and flow.response.headers.get("content-length"):
-            # A rewrite changes the body length and a streaming
-            # response should not have declared one anyway.
             del flow.response.headers["content-length"]
 
         relay = Relay(
@@ -159,11 +159,6 @@ def _streamer(relay: Relay, tap, ex):
         return out
 
     return streamer
-
-
-def sleeper(seconds: float):
-    """Indirection so tests do not actually wait."""
-    time.sleep(seconds)
 
 
 addons = [StreamTap()]
