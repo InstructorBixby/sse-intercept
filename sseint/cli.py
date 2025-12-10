@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "Nothing is proxied without at least one.")
     p.add_argument("--rules", metavar="FILE")
     p.add_argument("--record", metavar="FILE")
+    p.add_argument("--no-redact", action="store_true",
+                   help="keep credential headers in the session file. "
+                        "The file records that this was used.")
     p.add_argument("--decoder", choices=sorted(BY_NAME))
     p.add_argument("--pause-budget", type=int, default=30,
                    metavar="SECONDS")
@@ -109,6 +112,7 @@ def cmd_proxy(args) -> int:
         "sseint_allow_hosts": ",".join(hosts),
         "sseint_rules": args.rules or "",
         "sseint_record": args.record or "",
+        "sseint_redact": not args.no_redact,
         "sseint_decoder": args.decoder or "",
         "sseint_pause_budget": args.pause_budget,
         "sseint_quiet": args.quiet,
@@ -119,6 +123,9 @@ def cmd_proxy(args) -> int:
     master.options.update(**settings)
     print(f"sseint listening on {args.host}:{args.port}, scope: "
           f"{', '.join(hosts)}", file=sys.stderr)
+    if args.no_redact and args.record:
+        print("warning: credential headers will be written to "
+              f"{args.record}", file=sys.stderr)
     print(f"CA: {args.confdir}/mitmproxy-ca-cert.pem", file=sys.stderr)
     try:
         asyncio.run(master.run())
