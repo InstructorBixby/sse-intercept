@@ -1,16 +1,44 @@
 stages:
   - check
 
+variables:
+  # The cache has to live inside the build directory for the runner
+  # to be able to archive it.
+  UV_CACHE_DIR: .cache/uv
+
 test:
   stage: check
   image: python:$PY-slim
   parallel:
     matrix:
       - PY: ["3.11", "3.12", "3.13"]
+  cache:
+    key:
+      files:
+        - pyproject.toml
+        - constraints-dev.txt
+    paths:
+      - .cache/uv
   before_script:
     - pip install -q uv
-    - uv pip install --system -e ".[dev]"
+    - uv pip install --system -e ".[dev]" -c constraints-dev.txt
   script:
     - ruff check .
     - mypy
     - pytest -q
+
+# No Dependabot on this instance and no interest in running one. A
+# monthly scheduled pipeline prints what has moved; bumping the pins
+# is a thing I do deliberately, with the suite green either side, not
+# a stack of branches I merge without reading.
+outdated:
+  stage: check
+  image: python:3.13-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  before_script:
+    - pip install -q uv
+    - uv pip install --system -e ".[dev]" -c constraints-dev.txt
+  script:
+    - uv pip list --system --outdated
+  allow_failure: true

@@ -1,0 +1,8 @@
+# Pinned so a CI failure is a change in this repo, not a change in
+# somebody else's release. Bumped deliberately, with the test suite
+# green before and after.
+mitmproxy==11.0.2
+PyYAML==6.0.2
+pytest==8.3.4
+ruff==0.8.4
+mypy==1.14.0
