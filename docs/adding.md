@@ -11,8 +11,8 @@ add a decoder for one endpoint and leave it in here forever.
 2. It obeys the contract in `docs/decoders.md`: never blocks, never
    assumes a read is a frame, never swallows bytes, flushes on
    `close`.
-3It has a quirk in `samples/stream_server.py` reproducing the framing,
-   and a test that drives the decoder against it.
+3. It has a quirk in `samples/stream_server.py` reproducing the
+   framing, and a test that drives the decoder against it.
 
 One client's private framing does not clear (1). That is what an
 out-of-tree decoder is for.
