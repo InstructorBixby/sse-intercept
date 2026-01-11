@@ -4,5 +4,6 @@
 mitmproxy==11.0.2
 PyYAML==6.0.2
 pytest==8.3.4
+pytest-cov==6.0.0
 ruff==0.8.4
 mypy==1.14.0
