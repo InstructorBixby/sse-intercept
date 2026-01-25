@@ -1,0 +1,46 @@
+site_name: sse-intercept
+site_description: >-
+  An intercepting proxy for streaming HTTP responses: see each frame
+  as it arrives, and change it while the client is still reading.
+repo_url: http://git.c01n31.net/c01n31pan1c/sse-intercept
+edit_uri: -/edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: light
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Overview: index.md
+  - Why not Burp: why-not-burp.md
+  - Running it: running.md
+  - Rules: rules.md
+  - Recipes: recipes.md
+  - Decoders: decoders.md
+  - Session files: session-format.md
+  - Export: export.md
+  - Stability: stability.md
+  - The bar for adding something: adding.md
+  - Where this can hurt me: careful.md
