@@ -1,17 +1,14 @@
 stages:
   - check
+  - docs
 
 variables:
   # The cache has to live inside the build directory for the runner
   # to be able to archive it.
   UV_CACHE_DIR: .cache/uv
 
-test:
-  stage: check
+.py:
   image: python:$PY-slim
-  parallel:
-    matrix:
-      - PY: ["3.11", "3.12", "3.13"]
   cache:
     key:
       files:
@@ -22,23 +19,43 @@ test:
   before_script:
     - pip install -q uv
     - uv pip install --system -e ".[dev]" -c constraints-dev.txt
+
+test:
+  extends: .py
+  stage: check
+  parallel:
+    matrix:
+      - PY: ["3.11", "3.12", "3.13"]
   script:
     - ruff check .
     - mypy
-    - pytest -q
+    - pytest -q --cov --cov-report=term --cov-report=xml
+  # The runner scrapes the total off stdout; the cobertura report is
+  # what puts per-line coverage next to the diff, which is the only
+  # form of it I have ever actually looked at.
+  coverage: '/^TOTAL.+?(\d+\%)$/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 week
 
-# No Dependabot on this instance and no interest in running one. A
-# monthly scheduled pipeline prints what has moved; bumping the pins
-# is a thing I do deliberately, with the suite green either side, not
-# a stack of branches I merge without reading.
-outdated:
-  stage: check
+docs:
+  stage: docs
   image: python:3.13-slim
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
   before_script:
     - pip install -q uv
-    - uv pip install --system -e ".[dev]" -c constraints-dev.txt
+    - uv pip install --system -e ".[docs]"
+  # --strict turns a broken link or a page missing from the nav into
+  # a failure. Docs that drift are worse than no docs, and I am the
+  # only person who will ever notice they drifted.
   script:
-    - uv pip list --system --outdated
-  allow_failure: true
+    - mkdocs build --strict
+  artifacts:
+    paths:
+      - site/
+    expire_in: 1 week
