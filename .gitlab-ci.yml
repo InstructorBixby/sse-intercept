@@ -1,6 +1,7 @@
 stages:
   - check
   - docs
+  - build
 
 variables:
   # The cache has to live inside the build directory for the runner
@@ -30,9 +31,6 @@ test:
     - ruff check .
     - mypy
     - pytest -q --cov --cov-report=term --cov-report=xml
-  # The runner scrapes the total off stdout; the cobertura report is
-  # what puts per-line coverage next to the diff, which is the only
-  # form of it I have ever actually looked at.
   coverage: '/^TOTAL.+?(\d+\%)$/'
   artifacts:
     when: always
@@ -50,12 +48,44 @@ docs:
   before_script:
     - pip install -q uv
     - uv pip install --system -e ".[docs]"
-  # --strict turns a broken link or a page missing from the nav into
-  # a failure. Docs that drift are worse than no docs, and I am the
-  # only person who will ever notice they drifted.
   script:
     - mkdocs build --strict
   artifacts:
     paths:
       - site/
     expire_in: 1 week
+
+# A tag builds an sdist and a wheel and keeps them. Nothing is
+# uploaded anywhere: the artefact is what I copy onto the machine
+# that has to run the proxy, and the pipeline exists so that the file
+# I copy came off a green suite rather than off whatever was in my
+# working tree at the time.
+wheel:
+  stage: build
+  image: python:3.13-slim
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  before_script:
+    - pip install -q uv build
+    - uv pip install --system -e ".[dev]" -c constraints-dev.txt
+  script:
+    - ruff check .
+    - mypy
+    - pytest -q
+    # A package whose metadata disagrees with its tag is a package I
+    # cannot reason about six months later, holding a wheel off a
+    # laptop and trying to work out what is in it.
+    - |
+      python - <<'PY'
+      import os, pathlib, re, sys
+      tag = os.environ["CI_COMMIT_TAG"].lstrip("v")
+      src = pathlib.Path("sseint/__init__.py").read_text()
+      got = re.search(r'__version__ = "([^"]+)"', src).group(1)
+      if got != tag:
+          sys.exit(f"tag {tag} != __version__ {got}")
+      PY
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: never
