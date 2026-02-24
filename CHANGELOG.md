@@ -2,6 +2,42 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.0.0]
+
+### Added
+- HAR export, with every frame in a `_frames` extension field and
+  a statement on the log that the body was reassembled.
+- Credential headers are redacted in session files by default;
+  `--no-redact` is recorded in the file's own meta record.
+- `samples/stream_server.py`: a local SSE server with eleven
+  switchable misbehaviours, each copied off a real endpoint, and an
+  integration test that runs the decoder against all of them.
+- `docs/why-not-burp.md`, `docs/recipes.md`, `docs/stability.md`,
+  `docs/adding.md`, `docs/careful.md`.
+- Pinned dev constraints, cached in CI. Coverage on the pipeline,
+  and the docs built with `--strict` on every push so a broken
+  link fails rather than rots.
+- Full package metadata: classifiers, project URLs, a `docs` extra.
+- A tag job that builds the sdist and wheel and refuses a tag whose
+  version does not match the source. The wheel is what goes onto a
+  machine that is not this one; it is not published anywhere.
+- A deprecation policy with teeth: announced in the changelog,
+  still working for a full minor release and never under six
+  months, warning once per run, removed only in a major. A renamed
+  flag keeps the old spelling as a hidden alias, because the
+  spelling in my own runbooks is the one I will type next, and I
+  find out mid-capture.
+
+### Changed
+- Session format 2: `meta` records whether headers were redacted.
+- `cli.py` is argparse and dispatch only; every subcommand body is
+  callable without it, which is how the tests call them.
+
+### Note
+- First version I am prepared to depend on rather than keep
+  reading. The command line, rule file, session format and HAR
+  fields are fixed now -- see `docs/stability.md`.
+
 ## [0.5.0]
 
 ### Added

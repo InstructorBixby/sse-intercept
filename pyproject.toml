@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sse-intercept"
-version = "0.5.0"
+version = "1.0.0"
 description = "Intercepting proxy for streaming HTTP responses: SSE, chunked, NDJSON"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ keywords = [
   "streaming", "http", "interception", "security", "testing",
 ]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Intended Audience :: Information Technology",
