@@ -28,17 +28,26 @@ PARTIAL = max(len(s) for s in SEPARATORS) - 1
 # off it and never receives it is a client that hangs.
 DONE_SENTINEL = "[DONE]"
 
+# A server that sends a body with no frame separator in it at all --
+# which happens when an error page comes back with the streaming
+# content type still attached -- would otherwise be buffered until the
+# process dies. At the cap the buffer is surrendered as one frame
+# marked `overlong`, which is both a frame view that shows something
+# and an accurate description of what arrived.
+MAX_FRAME_BYTES = 4 * 1024 * 1024
+
 
 class SSEDecoder:
 
     name = "sse"
     content_types = ("text/event-stream",)
 
-    def __init__(self, clock=None):
+    def __init__(self, clock=None, max_frame_bytes=MAX_FRAME_BYTES):
         self._buf = b""
         self._seq = 0
         self._clock = clock or time.monotonic
         self._t0 = None
+        self.max_frame_bytes = max_frame_bytes
 
     # -- feeding ----------------------------------------------------
     def feed(self, chunk: bytes) -> list[Frame]:
@@ -52,6 +61,11 @@ class SSEDecoder:
                 break
             self._buf = rest
             out.append(self._frame(block))
+        if len(self._buf) > self.max_frame_bytes:
+            block, self._buf = self._buf, b""
+            frame = self._frame(block)
+            frame.note = "overlong"
+            out.append(frame)
         return out
 
     def close(self) -> list[Frame]:
@@ -74,6 +88,10 @@ class SSEDecoder:
         """Buffer tail might be half a separator, not a stall."""
         tail = self._buf[-PARTIAL:]
         return bool(tail) and any(s.startswith(tail) for s in SEPARATORS)
+
+    @property
+    def buffered(self) -> int:
+        return len(self._buf)
 
     # -- parsing ----------------------------------------------------
     @staticmethod
