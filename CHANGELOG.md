@@ -2,6 +2,14 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.0.1]
+
+### Fixed
+- The SSE decoder no longer buffers without limit when a response
+  body contains no frame separator at all, which is what an error
+  page served with a streaming content type looks like. At the cap
+  the buffer is surrendered as one frame marked `overlong`.
+
 ## [1.0.0]
 
 ### Added
