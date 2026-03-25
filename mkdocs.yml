@@ -39,6 +39,7 @@ nav:
   - Rules: rules.md
   - Recipes: recipes.md
   - Decoders: decoders.md
+  - Out-of-tree decoders: plugins.md
   - Session files: session-format.md
   - Export: export.md
   - Stability: stability.md
