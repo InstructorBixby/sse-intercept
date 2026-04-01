@@ -61,6 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="data | lines | json:<dotted.path>")
     s.add_argument("--timing", action="store_true")
     s.add_argument("--histogram", action="store_true")
+    s.add_argument("--resume", action="store_true",
+                   help="report, per reconnect, whether the client "
+                        "sent Last-Event-ID and whether the server "
+                        "honoured it")
     s.add_argument("--stall", type=float, default=1.0,
                    metavar="SECONDS")
 
@@ -161,7 +165,7 @@ def cmd_show(args) -> int:
     sys.stdout.write(render(
         meta, exchanges, only=args.exchange,
         reassemble_mode=args.reassemble, timing=args.timing,
-        hist=args.histogram, stall_s=args.stall))
+        hist=args.histogram, resume=args.resume, stall_s=args.stall))
     return 0
 
 
