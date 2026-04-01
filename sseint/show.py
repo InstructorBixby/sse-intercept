@@ -1,20 +1,25 @@
 """Rendering a session as text.
 
-Pulled out of cli.py once it grew three modes: the printing is worth
-testing and argparse plumbing is not.
+Pulled out of cli.py once it grew modes: the printing is worth testing
+and argparse plumbing is not.
 """
 from __future__ import annotations
 
 from sseint.reassemble import describe, reassemble
+from sseint.resume import analyse as analyse_resume
 from sseint.timing import analyse, histogram
 
 MARKS = {"comment": ":", "event": "#", "line": ".", "chunk": "~"}
 
 
 def render(meta, exchanges, *, only=None, reassemble_mode=None,
-           timing=False, hist=False, stall_s=1.0, width=100) -> str:
+           timing=False, hist=False, resume=False, stall_s=1.0,
+           width=100) -> str:
     out = [f"# format={meta.get('format')} "
-           f"tool={meta.get('tool_version')}"]
+           f"tool={meta.get('tool_version')} "
+           f"redacted={meta.get('redacted', 'unknown')}"]
+    if resume:
+        return "\n".join(out + _resume(exchanges)) + "\n"
     for ex in exchanges:
         if only and ex.n != only:
             continue
@@ -44,3 +49,17 @@ def render(meta, exchanges, *, only=None, reassemble_mode=None,
             out.append(f"  {mark}{f.seq:<4} +{f.t:7.3f}s  "
                        f"{f.summary(width)}{note}")
     return "\n".join(out) + "\n"
+
+
+def _resume(exchanges) -> list[str]:
+    events = analyse_resume(exchanges)
+    if not events:
+        return ["", "no reconnects on the same path in this session"]
+    out = ["", "reconnects:"]
+    for r in events:
+        out.append(f"  [{r.after}] -> [{r.exchange}]  "
+                   f"last id seen {r.last_id_seen or '-'}, "
+                   f"sent {r.last_id_sent or '-'}, "
+                   f"{r.overlap} char(s) repeated")
+        out.append(f"      {r.verdict()}")
+    return out
