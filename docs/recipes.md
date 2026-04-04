@@ -49,21 +49,32 @@ connection content?
 
 If the injected content renders identically, nothing between the
 socket and the screen distinguishes what the server said from what
-arrived on the connection. That is worth knowing before anybody asks
-whether a signature on the response body would help.
+arrived on the connection. Worth knowing before anybody asks whether
+signing the response body would help.
 
 ## 5. Does a resume actually resume?
 
     rules:
       - id: cut-halfway
-        match: {seq_from: 10, seq_to: 10}
+        match: {seq: 10}
         action: cut
 
-Then look at the next request. A client that reconnects should send
-`Last-Event-ID` with the last `id:` it saw. Many send no header and
-start again, which duplicates content; a few send the wrong id. Run
-`sseint show --timing` on both exchanges to see what the server did
-with it.
+Then:
+
+    sseint show run.jsonl --resume
+
+    reconnects:
+      [1] -> [2]  last id seen 9, sent -, 34 char(s) repeated
+          client reconnected without Last-Event-ID; the server has no
+          way to resume and the first part is repeated
+
+Four outcomes, and the report tells them apart: resumed correctly;
+reconnected with no header; reconnected with the wrong id; reconnected
+with the right id and the server restarted anyway. The last two look
+identical in a transcript and have different owners.
+
+A client that does not reconnect at all shows up as no reconnect
+record, which is its own answer.
 
 ## 6. What does the timing actually look like?
 
@@ -71,7 +82,8 @@ with it.
 
 Report time to first frame separately from the gap distribution. They
 have different causes and conflating them produces a recommendation
-that does not help.
+that does not help. Subtract `added by proxy` before quoting anything
+from a run that had rules armed.
 
 ## 7. Make a client bug reproducible
 
@@ -79,5 +91,4 @@ that does not help.
 
 Point the client at the replay server. The bug now happens on demand
 with no dependency on the real service, which is the difference
-between a ticket that gets fixed and a ticket that gets closed as
-not-reproducible.
+between a ticket that gets fixed and one closed as not-reproducible.
