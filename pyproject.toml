@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sse-intercept"
-version = "1.0.0"
+version = "1.1.0"
 description = "Intercepting proxy for streaming HTTP responses: SSE, chunked, NDJSON"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,9 @@ Changelog = "http://git.c01n31.net/c01n31pan1c/sse-intercept/-/blob/main/CHANGEL
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.8", "mypy>=1.13"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
+[project.entry-points."sseint.decoders"]
+# Built-ins are not registered here; this group exists for
+# out-of-tree decoders. See docs/plugins.md.
 [project.scripts]
 sseint = "sseint.cli:main"
 

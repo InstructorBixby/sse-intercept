@@ -2,6 +2,16 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.1.0]
+
+### Added
+- Out-of-tree decoders load from the `sseint.decoders` entry point
+  group. A built-in name always wins and a shadowing plugin is
+  reported rather than silently loaded.
+- `sseint show --resume`: per reconnect, what `id:` the client last
+  received, what it sent in `Last-Event-ID`, how much content was
+  repeated, and which of the four usual outcomes it was.
+
 ## [1.0.1]
 
 ### Fixed
