@@ -36,6 +36,7 @@ nav:
   - Overview: index.md
   - Why not Burp: why-not-burp.md
   - Running it: running.md
+  - Container image: container.md
   - Rules: rules.md
   - Recipes: recipes.md
   - Decoders: decoders.md

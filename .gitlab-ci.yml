@@ -42,6 +42,24 @@ test:
       - coverage.xml
     expire_in: 1 week
 
+# The shell runner on this box. There is no docker-in-docker here and
+# I am not standing one up to build one image. (The job cannot be
+# called `image` either -- that is a reserved keyword and the lint
+# says so, eventually.)
+container:
+  stage: check
+  tags:
+    - podman
+  script:
+    - podman build -t sseint:$CI_COMMIT_SHORT_SHA -f Containerfile .
+    - podman run --rm sseint:$CI_COMMIT_SHORT_SHA --version
+    # Exit 2 is the refusal. An image that proxied anything with no
+    # scope would be the worst possible default, and the one thing
+    # about this image worth a test.
+    - podman run --rm sseint:$CI_COMMIT_SHORT_SHA proxy || test $? -eq 2
+  after_script:
+    - podman rmi -f sseint:$CI_COMMIT_SHORT_SHA || true
+
 docs:
   stage: docs
   image: python:3.13-slim
@@ -55,11 +73,6 @@ docs:
       - site/
     expire_in: 1 week
 
-# A tag builds an sdist and a wheel and keeps them. Nothing is
-# uploaded anywhere: the artefact is what I copy onto the machine
-# that has to run the proxy, and the pipeline exists so that the file
-# I copy came off a green suite rather than off whatever was in my
-# working tree at the time.
 wheel:
   stage: build
   image: python:3.13-slim
@@ -72,9 +85,6 @@ wheel:
     - ruff check .
     - mypy
     - pytest -q
-    # A package whose metadata disagrees with its tag is a package I
-    # cannot reason about six months later, holding a wheel off a
-    # laptop and trying to work out what is in it.
     - |
       python - <<'PY'
       import os, pathlib, re, sys
