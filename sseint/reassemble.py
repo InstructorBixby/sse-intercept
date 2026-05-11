@@ -7,8 +7,8 @@ First, a report needs the message, not 300 frames of it.
 Second, and the actual motivation: the reassembled streamed response
 and the non-streamed response to the same request are supposed to be
 the same message. When they are not -- and they are not, more often
-than anyone expects -- the difference is usually a filter that runs on
-the complete response and cannot run on a stream. That is a finding
+than anyone expects -- the difference is usually a control that runs
+on the complete response and cannot run on a stream. That is a finding
 that needs no injection to demonstrate, and this is the cheapest way
 to find it.
 
@@ -78,7 +78,13 @@ def _json_path(frames, path: str) -> str:
 
 
 def describe(frames: list[Frame]) -> dict:
-    """Facts about a stream that a report wants in one line."""
+    """Facts about a stream that a report wants in one line.
+
+    A stream consisting only of keep-alives is a real case -- it is
+    what a server does for the thirty seconds before it decides it
+    has nothing to say -- so every field here has to survive an empty
+    event list rather than assuming there was a first frame.
+    """
     events = [f for f in frames if f.kind != "comment"]
     comments = [f for f in frames if f.kind == "comment"]
     gaps = [b.t - a.t for a, b in zip(events, events[1:])]
@@ -88,6 +94,7 @@ def describe(frames: list[Frame]) -> dict:
         "first_frame_s": round(events[0].t, 4) if events else None,
         "last_frame_s": round(events[-1].t, 4) if events else None,
         "max_gap_s": round(max(gaps), 4) if gaps else None,
+        "keepalive_only": bool(comments) and not events,
         "done_sentinel": any(
             f.data.strip() == DONE_SENTINEL for f in events),
         "event_names": sorted({f.event for f in events if f.event}),
