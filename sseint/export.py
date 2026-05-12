@@ -8,15 +8,13 @@ report gets written.
 
 What is done about the loss:
 
-- `response.content.text` is the reassembled message, which is what
-  the HAR consumer expects a body to be.
-- `timings.wait` is time to first frame, which is the only honest
-  mapping: it is the interval the client spent waiting on the server
-  before anything arrived.
+- `response.content.text` is the reassembled message, which is what a
+  HAR consumer expects a body to be.
+- `timings.wait` is time to first frame, the only honest mapping: it
+  is the interval the client spent waiting before anything arrived.
 - every frame, with its relative time, goes in `_frames` on the entry.
   A leading underscore is HAR's own convention for a custom field, so
-  a reader that does not know about it ignores it rather than
-  rejecting the file.
+  a reader that does not know about it ignores it.
 - `_sseint` on the log records that the body was reassembled and by
   which mode, so nobody quotes `content.text` as if it arrived that
   way.
@@ -24,12 +22,17 @@ What is done about the loss:
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from sseint import __version__
 from sseint.reassemble import reassemble
 from sseint.timing import analyse
 
 HAR_VERSION = "1.2"
+# The status recorded for an exchange is whatever the proxy had: an
+# HTTP/1.1 status line, or just "200 OK" over h2 where there is no
+# status line at all. Both have to yield 200.
+STATUS_RE = re.compile(r"\b([1-5]\d{2})\b")
 
 
 def _headers(pairs):
@@ -64,7 +67,7 @@ def entry(meta, ex, mode="data") -> dict:
             "bodySize": -1,
         },
         "response": {
-            "status": _status_code(ex.status),
+            "status": status_code(ex.status),
             "statusText": ex.status,
             "httpVersion": "",
             "headers": _headers(ex.headers),
@@ -117,11 +120,9 @@ def har(meta, exchanges, mode="data") -> dict:
     }
 
 
-def _status_code(status: str) -> int:
-    for part in status.replace("/", " ").split():
-        if part.isdigit() and len(part) == 3:
-            return int(part)
-    return 0
+def status_code(status: str) -> int:
+    m = STATUS_RE.search(status or "")
+    return int(m.group(1)) if m else 0
 
 
 def _mime(headers) -> str:
