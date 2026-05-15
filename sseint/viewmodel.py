@@ -41,6 +41,15 @@ class Filter:
 
 
 class ViewModel:
+    """Follow mode and a filter used to fight each other.
+
+    Typing a filter while following the tail of a live session would
+    re-pin the view to the bottom on every keystroke, so the frame you
+    were trying to look at left the screen as you typed. Follow is now
+    cancelled by filtering as well as by moving, and `visible()` keeps
+    whatever is selected on screen rather than deciding where the
+    window goes from scratch.
+    """
 
     def __init__(self, exchanges, height: int = 20):
         self.exchanges = list(exchanges)
@@ -48,8 +57,22 @@ class ViewModel:
         self.selected = 0
         self.top = 0
         self.height = height
-        self.filter = Filter()
+        self._filter = Filter()
         self.follow = True
+
+    @property
+    def filter(self):
+        return self._filter
+
+    @filter.setter
+    def filter(self, value):
+        self._filter = value
+        self.follow = False
+
+    def set_filter(self, **changes):
+        for key, value in changes.items():
+            setattr(self._filter, key, value)
+        self.follow = False
 
     @property
     def exchange(self):
@@ -73,7 +96,7 @@ class ViewModel:
         out = []
         for f in ex.frames:
             ops = ex.ops.get(f.seq, [])
-            if self.filter.test(f, ops):
+            if self._filter.test(f, ops):
                 out.append((f, ops))
         return out
 
@@ -81,6 +104,12 @@ class ViewModel:
         rows = self.rows
         if self.follow and len(rows) > self.height:
             self.top = len(rows) - self.height
+            self.selected = len(rows) - 1
+        self.selected = max(0, min(self.selected, max(0, len(rows) - 1)))
+        if self.selected < self.top:
+            self.top = self.selected
+        elif self.selected >= self.top + self.height:
+            self.top = self.selected - self.height + 1
         self.top = max(0, min(self.top, max(0, len(rows) - self.height)))
         return rows[self.top:self.top + self.height]
 
@@ -135,9 +164,9 @@ class ViewModel:
         bits = [f"[{self.index + 1}/{len(self.exchanges)}]",
                 f"{ex.method} {ex.host}{ex.path}",
                 f"{rows}/{total} frames"]
-        if self.filter.text:
-            bits.append(f"/{self.filter.text}")
-        if self.filter.touched_only:
+        if self._filter.text:
+            bits.append(f"/{self._filter.text}")
+        if self._filter.touched_only:
             bits.append("touched")
         bits.append("follow" if self.follow else "paged")
         return "  ".join(bits)

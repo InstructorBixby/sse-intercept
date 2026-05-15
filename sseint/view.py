@@ -6,7 +6,7 @@ keys.
 
 Keys:
     j / k / arrows   move
-    g / G            top / bottom
+    g / G            top / follow the tail
     n / p            next / previous exchange
     /                filter, Enter to apply, empty to clear
     r                toggle regex filtering
@@ -47,7 +47,7 @@ def _loop(scr, exchanges):
         if prompt is not None:
             prompt, done = _edit(prompt, key)
             if done:
-                vm.filter.text = prompt or ""
+                vm.set_filter(text=prompt or "")
                 prompt = None
             continue
         if key in ("q", "\x1b"):
@@ -70,20 +70,18 @@ def _key(vm, key, pane):
         vm.selected = 0
         vm.top = 0
         vm.follow = False
-    elif key == "G":
-        vm.follow = True
-    elif key == "f":
+    elif key in ("G", "f"):
         vm.follow = True
     elif key == "n":
         vm.next_exchange()
     elif key == "p":
         vm.prev_exchange()
     elif key == "r":
-        vm.filter.regex = not vm.filter.regex
+        vm.set_filter(regex=not vm.filter.regex)
     elif key == "t":
-        vm.filter.touched_only = not vm.filter.touched_only
+        vm.set_filter(touched_only=not vm.filter.touched_only)
     elif key == "c":
-        vm.filter.kinds = set() if vm.filter.kinds else {"event"}
+        vm.set_filter(kinds=set() if vm.filter.kinds else {"event"})
     elif key == "s":
         return None if pane == "summary" else "summary"
     elif key == "a":
