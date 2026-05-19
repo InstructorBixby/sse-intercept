@@ -2,6 +2,27 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.1.1]
+
+### Added
+- A `Containerfile`, built locally and never pushed anywhere, for
+  the machines I am not allowed to install mitmproxy on. Runs as a
+  non-root user, has no default scope, and wants the CA directory
+  mounted so I am not importing a new certificate on every start.
+  CI builds it and checks it still refuses an empty scope.
+  `docs/container.md`.
+
+### Fixed
+- `describe()` on a stream consisting only of keep-alive comments
+  no longer assumes there was a first frame. Reported as
+  `keepalive_only`, which is a real server behaviour and not an
+  error.
+- HAR export reads a status code out of an h2 exchange, where there
+  is no HTTP/1.1 status line to parse.
+- In `sseint view`, typing a filter while following the tail no
+  longer re-pins the view to the bottom on every keystroke, which
+  moved the frame you were trying to look at off the screen.
+
 ## [1.1.0]
 
 ### Added
