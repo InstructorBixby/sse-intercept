@@ -31,7 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-host", action="append", default=[],
                    metavar="GLOB",
                    help="host this proxy may connect to; repeatable. "
-                        "Nothing is proxied without at least one.")
+                        "Nothing is proxied without at least one. "
+                        "@FILE reads one glob per line.")
     p.add_argument("--rules", metavar="FILE")
     p.add_argument("--record", metavar="FILE")
     p.add_argument("--no-redact", action="store_true",
@@ -65,6 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="report, per reconnect, whether the client "
                         "sent Last-Event-ID and whether the server "
                         "honoured it")
+    s.add_argument("--visible", action="store_true",
+                   help="render invisible codepoints as named markers")
     s.add_argument("--stall", type=float, default=1.0,
                    metavar="SECONDS")
 
@@ -88,8 +91,32 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def expand_hosts(values) -> list[str]:
+    """Expand @FILE entries.
+
+    A real engagement scope is a list somebody sent you. Retyping it
+    as twenty flags is how a host gets missed in one direction or
+    added in the other.
+    """
+    out = []
+    for value in values:
+        if value.startswith("@"):
+            with open(value[1:], encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.split("#", 1)[0].strip()
+                    if line:
+                        out.append(line)
+        else:
+            out.append(value)
+    return out
+
+
 def cmd_proxy(args) -> int:
-    hosts = list(args.allow_host)
+    try:
+        hosts = expand_hosts(args.allow_host)
+    except OSError as exc:
+        print(f"sseint: {exc}", file=sys.stderr)
+        return 2
     if args.rules:
         try:
             extra, _ = load(args.rules)
@@ -125,8 +152,9 @@ def cmd_proxy(args) -> int:
         key, _, value = raw.partition("=")
         settings[key] = value
     master.options.update(**settings)
-    print(f"sseint listening on {args.host}:{args.port}, scope: "
-          f"{', '.join(hosts)}", file=sys.stderr)
+    print(f"sseint listening on {args.host}:{args.port}, "
+          f"{len(hosts)} host(s) in scope: {', '.join(hosts)}",
+          file=sys.stderr)
     if args.no_redact and args.record:
         print("warning: credential headers will be written to "
               f"{args.record}", file=sys.stderr)
@@ -165,7 +193,8 @@ def cmd_show(args) -> int:
     sys.stdout.write(render(
         meta, exchanges, only=args.exchange,
         reassemble_mode=args.reassemble, timing=args.timing,
-        hist=args.histogram, resume=args.resume, stall_s=args.stall))
+        hist=args.histogram, resume=args.resume,
+        show_invisible=args.visible, stall_s=args.stall))
     return 0
 
 
