@@ -43,6 +43,7 @@ nav:
   - Out-of-tree decoders: plugins.md
   - Session files: session-format.md
   - Export: export.md
+  - Invisible codepoints: unicode.md
   - Stability: stability.md
   - The bar for adding something: adding.md
   - Where this can hurt me: careful.md
