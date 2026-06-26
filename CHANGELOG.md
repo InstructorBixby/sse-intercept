@@ -2,6 +2,21 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.2.0]
+
+### Added
+- `sseint show --visible` renders invisible and formatting
+  codepoints as named markers. A frame containing one is flagged
+  even without the flag, since the reason to look is that you
+  cannot see it. Hands off to `glyphstop` when it is installed.
+- `--allow-host @FILE` reads one host glob per line, with comments.
+  An engagement scope arrives as a list; retyping it as twenty
+  flags is how a host gets missed.
+
+### Changed
+- `expand_hosts` raises on a missing scope file rather than
+  quietly starting with a smaller scope than intended.
+
 ## [1.1.1]
 
 ### Added
