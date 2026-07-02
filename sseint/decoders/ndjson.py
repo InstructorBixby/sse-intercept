@@ -1,12 +1,17 @@
 """NDJSON / JSON-lines.
 
 Simpler than SSE and wrong in a different way: the frame boundary is a
-newline, which means a newline inside a JSON string is not a boundary,
-which means a naive splitter corrupts any payload containing one. JSON
-requires string newlines to be escaped, so splitting on a raw newline
-is in fact safe for well-formed input -- but input here is not assumed
-well-formed, so each line is parsed and a line that does not parse is
-held and retried with the next one before being surrendered.
+newline, which means a newline inside a JSON string is not a boundary.
+JSON requires string newlines to be escaped, so splitting on a raw
+newline is in fact safe for well-formed input -- but input here is not
+assumed well-formed, so each line is parsed, and a line that does not
+parse is held and retried with the next one.
+
+Holding has to be bounded. A server emitting a stream of lines that
+are each individually invalid JSON -- a plain-text error log with the
+NDJSON content type still on it -- would otherwise accumulate the
+whole response in the hold buffer and show nothing. At the cap the
+held text is surrendered as one `unparsed` frame and holding restarts.
 """
 from __future__ import annotations
 
@@ -15,6 +20,8 @@ import time
 
 from sseint.frame import Frame
 
+MAX_HELD_BYTES = 1024 * 1024
+
 
 class NDJSONDecoder:
 
@@ -22,12 +29,13 @@ class NDJSONDecoder:
     content_types = ("application/x-ndjson", "application/jsonl",
                      "application/x-jsonlines", "application/json-seq")
 
-    def __init__(self, clock=None):
+    def __init__(self, clock=None, max_held_bytes=MAX_HELD_BYTES):
         self._buf = b""
         self._held = ""
         self._seq = 0
         self._clock = clock or time.monotonic
         self._t0 = None
+        self.max_held_bytes = max_held_bytes
 
     def feed(self, chunk: bytes) -> list[Frame]:
         if self._t0 is None:
@@ -39,6 +47,8 @@ class NDJSONDecoder:
             frame = self._line(line)
             if frame is not None:
                 out.append(frame)
+            if len(self._held) > self.max_held_bytes:
+                out.append(self._surrender())
         return out
 
     def close(self) -> list[Frame]:
@@ -50,10 +60,12 @@ class NDJSONDecoder:
                 f.note = "eof"
                 frames.append(f)
         if self._held:
-            f = self._emit(self._held.encode(), "unparsed")
-            self._held = ""
-            frames.append(f)
+            frames.append(self._surrender())
         return frames
+
+    def _surrender(self) -> Frame:
+        text, self._held = self._held, ""
+        return self._emit(text.encode(), "unparsed")
 
     def _line(self, raw: bytes, final: bool = False) -> Frame | None:
         text = self._held + raw.decode("utf-8", "replace")
