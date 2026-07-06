@@ -9,13 +9,14 @@ thing this tool needs from a proxy and the thing most proxies will not
 give you.
 
 Everything else here is wiring: options, the scope guard, choosing a
-decoder, and handing frames to the same relay the socket
-implementation used.
+decoder, and handing frames to the relay. Version differences live in
+compat.py.
 """
 from __future__ import annotations
 
 from mitmproxy import ctx, http
 
+from sseint.compat import header_items
 from sseint.decoders import by_name, for_content_type
 from sseint.encoding import Inflater
 from sseint.relay import Relay
@@ -42,7 +43,6 @@ class StreamTap:
         self.pause_budget_s = 30.0
         self.redact = True
 
-    # -- options ----------------------------------------------------
     def load(self, loader):
         loader.add_option("sseint_allow_hosts", str, "",
                           "Comma-separated host globs this proxy may "
@@ -91,7 +91,6 @@ class StreamTap:
         if self.writer:
             self.writer.close()
 
-    # -- scope ------------------------------------------------------
     def requestheaders(self, flow: http.HTTPFlow):
         host = flow.request.pretty_host
         if not self.scope.allows(host):
@@ -100,7 +99,6 @@ class StreamTap:
                 403, f"sse-intercept: {host} is not in scope\n".encode(),
                 {"content-type": "text/plain"})
 
-    # -- the streaming hook -----------------------------------------
     def responseheaders(self, flow: http.HTTPFlow):
         if flow.response is None:
             return
@@ -116,12 +114,11 @@ class StreamTap:
             method=flow.request.method,
             path=flow.request.path,
             status=f"{flow.response.status_code} {flow.response.reason}",
-            headers=list(flow.response.headers.items(multi=True)),
+            headers=header_items(flow.response.headers),
             decoder=decoder.name if decoder else None)
         if self.writer:
             self.writer.exchange(
-                ex, request_headers=list(
-                    flow.request.headers.items(multi=True)))
+                ex, request_headers=header_items(flow.request.headers))
 
         if self.engine and flow.response.headers.get("content-length"):
             del flow.response.headers["content-length"]
