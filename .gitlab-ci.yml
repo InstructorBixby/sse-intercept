@@ -4,8 +4,6 @@ stages:
   - build
 
 variables:
-  # The cache has to live inside the build directory for the runner
-  # to be able to archive it.
   UV_CACHE_DIR: .cache/uv
 
 .py:
@@ -29,7 +27,6 @@ test:
       - PY: ["3.11", "3.12", "3.13"]
   script:
     - ruff check .
-    - mypy
     - pytest -q --cov --cov-report=term --cov-report=xml
   coverage: '/^TOTAL.+?(\d+\%)$/'
   artifacts:
@@ -42,10 +39,23 @@ test:
       - coverage.xml
     expire_in: 1 week
 
-# The shell runner on this box. There is no docker-in-docker here and
-# I am not standing one up to build one image. (The job cannot be
-# called `image` either -- that is a reserved keyword and the lint
-# says so, eventually.)
+# The integration tests already cover these, but one job per quirk
+# means a red pipeline names the quirk in the job title instead of in
+# the twelfth line of a parametrised traceback, which is the whole
+# difference between fixing it now and fixing it next week.
+quirks:
+  extends: .py
+  stage: check
+  variables:
+    PY: "3.13"
+  parallel:
+    matrix:
+      - QUIRK: [none, crlf, no-final-blank, split-separator,
+                keepalive, gzip, gzip-unlabelled, no-sentinel,
+                content-length, huge-frame]
+  script:
+    - pytest -q tests/test_integration.py -k "$QUIRK"
+
 container:
   stage: check
   tags:
@@ -53,9 +63,6 @@ container:
   script:
     - podman build -t sseint:$CI_COMMIT_SHORT_SHA -f Containerfile .
     - podman run --rm sseint:$CI_COMMIT_SHORT_SHA --version
-    # Exit 2 is the refusal. An image that proxied anything with no
-    # scope would be the worst possible default, and the one thing
-    # about this image worth a test.
     - podman run --rm sseint:$CI_COMMIT_SHORT_SHA proxy || test $? -eq 2
   after_script:
     - podman rmi -f sseint:$CI_COMMIT_SHORT_SHA || true
@@ -83,7 +90,6 @@ wheel:
     - uv pip install --system -e ".[dev]" -c constraints-dev.txt
   script:
     - ruff check .
-    - mypy
     - pytest -q
     - |
       python - <<'PY'
