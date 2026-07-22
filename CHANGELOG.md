@@ -2,6 +2,19 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.2.1]
+
+### Changed
+- mitmproxy 12 supported alongside 11. The stream hook has not
+  moved -- it is the one thing this tool depends on -- but the
+  options API has, so the differences are in `sseint/compat.py`
+  rather than spread across three modules.
+- The proxy subcommand's body moved into `sseint/proxy_cli.py`, so
+  scope refusal is testable without binding a port. It is the one
+  behaviour here that must never regress.
+- CI runs each sample-server quirk as its own job, so a failure
+  names the quirk instead of hiding in a parametrised traceback.
+
 ## [1.2.0]
 
 ### Added
