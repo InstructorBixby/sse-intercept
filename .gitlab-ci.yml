@@ -39,10 +39,6 @@ test:
       - coverage.xml
     expire_in: 1 week
 
-# The integration tests already cover these, but one job per quirk
-# means a red pipeline names the quirk in the job title instead of in
-# the twelfth line of a parametrised traceback, which is the whole
-# difference between fixing it now and fixing it next week.
 quirks:
   extends: .py
   stage: check
@@ -91,16 +87,12 @@ wheel:
   script:
     - ruff check .
     - pytest -q
-    - |
-      python - <<'PY'
-      import os, pathlib, re, sys
-      tag = os.environ["CI_COMMIT_TAG"].lstrip("v")
-      src = pathlib.Path("sseint/__init__.py").read_text()
-      got = re.search(r'__version__ = "([^"]+)"', src).group(1)
-      if got != tag:
-          sys.exit(f"tag {tag} != __version__ {got}")
-      PY
+    - python tools/check_tag.py
+    # The wheel goes onto machines with no checkout on them, so it
+    # has to be able to answer "which commit are you" by itself.
+    - python tools/stamp.py
     - python -m build
+    - sha256sum dist/*
   artifacts:
     paths:
       - dist/
