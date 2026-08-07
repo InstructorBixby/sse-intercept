@@ -42,6 +42,7 @@ class StreamTap:
         self.force_decoder = None
         self.pause_budget_s = 30.0
         self.redact = True
+        self.max_session_bytes = None
 
     def load(self, loader):
         loader.add_option("sseint_allow_hosts", str, "",
@@ -55,6 +56,10 @@ class StreamTap:
                           "Redact credential headers in the session "
                           "file. A file written without this says so "
                           "in its meta record.")
+        loader.add_option("sseint_max_session_bytes", int, 0,
+                          "Rotate the session file at this size. 0 "
+                          "uses the default; a negative value never "
+                          "rotates.")
         loader.add_option("sseint_decoder", str, "",
                           "Force a decoder by name.")
         loader.add_option("sseint_pause_budget", int, 30,
@@ -75,9 +80,16 @@ class StreamTap:
             self.scope = Scope(list(self.scope.patterns) + hosts)
         if "sseint_redact" in updated:
             self.redact = ctx.options.sseint_redact
+        if "sseint_max_session_bytes" in updated:
+            raw = ctx.options.sseint_max_session_bytes
+            self.max_session_bytes = (None if raw < 0
+                                      else (raw or None))
         if "sseint_record" in updated and ctx.options.sseint_record:
+            kwargs = {"redact_headers": self.redact}
+            if self.max_session_bytes:
+                kwargs["max_bytes"] = self.max_session_bytes
             self.writer = SessionWriter(ctx.options.sseint_record,
-                                        redact_headers=self.redact)
+                                        **kwargs)
         if "sseint_quiet" in updated:
             self.console.quiet = ctx.options.sseint_quiet
         if "sseint_decoder" in updated:
@@ -134,14 +146,7 @@ class StreamTap:
 
 
 def _streamer(relay: Relay, tap, ex):
-    """Adapt the relay to mitmproxy's chunk callback.
-
-    mitmproxy calls this with each chunk and sends back whatever is
-    returned. An empty chunk means end of stream, which is where the
-    decoder gets flushed -- a server that omitted the final blank line
-    has still sent its last frame and it is usually the interesting
-    one.
-    """
+    """Adapt the relay to mitmproxy's chunk callback."""
     finished = False
 
     def streamer(chunk: bytes) -> bytes:
