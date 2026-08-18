@@ -63,6 +63,7 @@ def settings_for(args, hosts) -> dict:
         "sseint_rules": args.rules or "",
         "sseint_record": args.record or "",
         "sseint_redact": not args.no_redact,
+        "sseint_max_session_bytes": args.max_session_bytes,
         "sseint_decoder": args.decoder or "",
         "sseint_pause_budget": args.pause_budget,
         "sseint_quiet": args.quiet,

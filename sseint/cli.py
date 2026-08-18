@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from sseint import __version__, session
+from sseint import __version__, csvout, session
 from sseint.compare import compare
 from sseint.decoders import BY_NAME
 from sseint.reassemble import reassemble
@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-redact", action="store_true",
                    help="keep credential headers in the session file. "
                         "The file records that this was used.")
+    p.add_argument("--max-session-bytes", type=int, default=0,
+                   metavar="N",
+                   help="rotate the session file at this size; "
+                        "negative never rotates")
     p.add_argument("--decoder", choices=sorted(BY_NAME))
     p.add_argument("--pause-budget", type=int, default=30,
                    metavar="SECONDS")
@@ -66,6 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "honoured it")
     s.add_argument("--visible", action="store_true",
                    help="render invisible codepoints as named markers")
+    s.add_argument("--csv", action="store_true",
+                   help="one row per frame, gaps already computed")
     s.add_argument("--stall", type=float, default=1.0,
                    metavar="SECONDS")
 
@@ -118,10 +124,14 @@ def cmd_replay(args) -> int:
 
 def cmd_show(args) -> int:
     meta, exchanges = session.read(args.session)
+    if args.exchange:
+        exchanges = [e for e in exchanges if e.n == args.exchange]
+    if args.csv:
+        csvout.write(exchanges, sys.stdout)
+        return 0
     sys.stdout.write(render(
-        meta, exchanges, only=args.exchange,
-        reassemble_mode=args.reassemble, timing=args.timing,
-        hist=args.histogram, resume=args.resume,
+        meta, exchanges, reassemble_mode=args.reassemble,
+        timing=args.timing, hist=args.histogram, resume=args.resume,
         show_invisible=args.visible, stall_s=args.stall))
     return 0
 
