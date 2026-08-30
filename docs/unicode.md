@@ -1,14 +1,21 @@
 # Invisible codepoints in a stream
 
-`sseint show --visible` renders every codepoint that is invisible, or
-that renders as something other than itself, as a named marker:
+`sseint show --show-invisible` renders every codepoint that is
+invisible, or that renders as something other than itself, as a named
+marker:
 
     #12   +0.431s  data: your balance is <RLO>42<PDF> dollars
     #13   +0.470s  data: <TAG+0049><TAG+0067>...
 
-A frame is flagged even when `--visible` was not asked for, because
-the reason to look is that you cannot see it, and waiting for the
-operator to remember a flag defeats the point.
+A frame is flagged even without the flag, because the reason to look
+is that you cannot see it, and waiting for the operator to remember an
+option defeats the point.
+
+!!! note "`--visible` was the old name"
+    It still works and warns once. People read it as a filter -- show
+    me only the frames I can see -- and used it expecting fewer lines,
+    which is the opposite of what it does. It goes away in 2.0.0; see
+    `docs/stability.md`.
 
 ## why it belongs in this tool at all
 
@@ -20,8 +27,8 @@ present. Three cases have come up:
   control that inspects a frame sees one of them. `sseint compare`
   against the non-streamed response is the direct test.
 - **The payload is split across frames.** Half of a Tags-block
-  sequence in frame 12 and half in frame 13 defeats a per-frame
-  filter completely, and the reassembled message still carries the
+  sequence in frame 12 and half in frame 13 defeats a per-frame filter
+  completely, and the reassembled message still carries the
   instruction. This is the streaming version of a payload split across
   turns.
 - **The transcript is the finding.** A test whose evidence is a frame
@@ -46,7 +53,7 @@ it is installed this module hands off to it rather than keeping a
 second, worse table:
 
     uv pip install -e ~/src/glyphstop
-    sseint show run.jsonl --reassemble data --visible
+    sseint show run.jsonl --reassemble data --show-invisible
 
 Keeping two tables in two tools is how they end up disagreeing, and
 the one that disagrees is always the one in front of the client.

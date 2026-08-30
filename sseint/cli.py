@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from sseint import __version__, csvout, session
+from sseint import __version__, csvout, deprecate, session
 from sseint.compare import compare
 from sseint.decoders import BY_NAME
 from sseint.reassemble import reassemble
@@ -68,8 +68,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="report, per reconnect, whether the client "
                         "sent Last-Event-ID and whether the server "
                         "honoured it")
-    s.add_argument("--visible", action="store_true",
+    s.add_argument("--show-invisible", action="store_true",
                    help="render invisible codepoints as named markers")
+    # Deprecated spelling. People read "--visible" as a filter -- show
+    # me only the frames I can see -- and used it expecting fewer
+    # lines, which is the opposite of what it does. Kept working
+    # because it is in other people's notes.
+    s.add_argument("--visible", action="store_true",
+                   dest="visible_deprecated",
+                   help=argparse.SUPPRESS)
     s.add_argument("--csv", action="store_true",
                    help="one row per frame, gaps already computed")
     s.add_argument("--stall", type=float, default=1.0,
@@ -123,6 +130,11 @@ def cmd_replay(args) -> int:
 
 
 def cmd_show(args) -> int:
+    show_invisible = args.show_invisible
+    if args.visible_deprecated:
+        deprecate.warn("--visible", "--show-invisible",
+                       removed_in="2.0.0")
+        show_invisible = True
     meta, exchanges = session.read(args.session)
     if args.exchange:
         exchanges = [e for e in exchanges if e.n == args.exchange]
@@ -132,7 +144,7 @@ def cmd_show(args) -> int:
     sys.stdout.write(render(
         meta, exchanges, reassemble_mode=args.reassemble,
         timing=args.timing, hist=args.histogram, resume=args.resume,
-        show_invisible=args.visible, stall_s=args.stall))
+        show_invisible=show_invisible, stall_s=args.stall))
     return 0
 
 
