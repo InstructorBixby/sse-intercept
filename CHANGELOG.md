@@ -2,6 +2,35 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.3.0]
+
+### Added
+- Session files rotate at `--max-session-bytes` (default 256MB) and
+  `session.read` follows the chain, so a rotated session is still
+  one session. A day pointed at a chatty client produced a file no
+  editor would open.
+- `sseint show --csv`: one row per frame with the gap already
+  computed, for the table that goes in the report.
+- `docs/faq.md`.
+
+- The tag job stamps the commit into the package and prints a
+  SHA-256 per built file, so `sseint --version` on a laptop says
+  which commit it came from and a checkout install admits it is
+  a checkout. `docs/builds.md`, including what is not claimed --
+  no reproducible builds.
+
+### Changed
+- Session format 3: `rotate` records, and `part` in `meta`.
+- The NDJSON decoder bounds how much unparseable text it holds
+  while waiting for a line to become valid JSON.
+
+### Deprecated
+- `sseint show --visible` is now `--show-invisible`. The old
+  spelling still works, is hidden from `--help`, warns once per
+  run, and is removed in 2.0.0. It was read as a filter -- show me
+  only the frames I can see -- which is the opposite of what it
+  does.
+
 ## [1.2.1]
 
 ### Changed
