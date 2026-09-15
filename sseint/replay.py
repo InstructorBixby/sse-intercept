@@ -16,6 +16,11 @@ Modes:
 Gaps are taken from the recorded `at` values and each sleep is
 computed against the replay's own start, so a slow write does not
 accumulate drift across three hundred frames.
+
+Every field is replayed, `id:` and `retry:` included. They were being
+dropped by the header filter, which quietly broke the resume test:
+a client replayed against a stream with no ids has nothing to put in
+`Last-Event-ID`, so it looked like a client defect every time.
 """
 from __future__ import annotations
 
@@ -24,6 +29,12 @@ import threading
 import time
 
 from sseint.wire import encode
+
+# Dropped from the replayed response head: the body is produced here,
+# so the recorded framing and encoding headers would describe a
+# different body than the one being sent.
+DROP_HEADERS = {"content-length", "transfer-encoding",
+                "content-encoding"}
 
 
 class ReplayError(Exception):
@@ -74,8 +85,7 @@ def make_handler(exchange, speed, on_frame=None):
         def _serve(self):
             self.send_response(200)
             for k, v in exchange.headers:
-                if k.lower() in ("content-length", "transfer-encoding",
-                                 "content-encoding"):
+                if k.lower() in DROP_HEADERS:
                     continue
                 self.send_header(k, v)
             self.send_header("connection", "close")
