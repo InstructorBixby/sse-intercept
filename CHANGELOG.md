@@ -2,6 +2,16 @@
 
 Keep a Changelog format, semver versions.
 
+## [1.3.1]
+
+### Fixed
+- `sseint replay` was dropping `id:` and `retry:` from replayed
+  frames, so a client replayed against a recorded stream had
+  nothing to put in `Last-Event-ID` and the resume test blamed the
+  client every time. Every field is replayed now; only the framing
+  and encoding headers are withheld, because the body is produced
+  locally and the recorded ones describe a different one.
+
 ## [1.3.0]
 
 ### Added
